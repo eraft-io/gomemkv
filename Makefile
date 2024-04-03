@@ -20,19 +20,10 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-default: meta_cli shard_server shard_cli meta_server
+default: gomemkv
 
-meta_cli:
-	go build -o output/metacli cmd/metacli/metacli.go
-
-meta_server:
-	go build -o output/metaserver cmd/metasvr/metasvr.go
-
-shard_server:
-	go build -o output/shardserver cmd/shardsvr/shardsvr.go
-
-shard_cli:
-	go build -o output/shardcli cmd/shardcli/shardcli.go
+gomemkv:
+	go build -o output/gomemkv app/application.go
 
 clean:
 	rm -rf output/*
