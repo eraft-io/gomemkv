@@ -30,12 +30,14 @@ type MemKvServer struct {
 	// Network port
 	port string
 	clis []*MemkvClient
+	db   *map[string]string
 }
 
 func MakeDefaultMemKvServer() *MemKvServer {
 	return &MemKvServer{
 		port: ":12306",
 		clis: []*MemkvClient{},
+		db:   &map[string]string{},
 	}
 }
 
@@ -59,10 +61,10 @@ func (s *MemKvServer) Boot() {
 			continue
 		}
 
-		newCli := MakeMemkvClient(newConn)
-		s.clis = append(s.clis, newCli)
-
+		newCli := MakeMemkvClient(newConn, s)
+		newCli.conn.SetNoDelay(false)
 		go newCli.ProccessRequest()
+		s.clis = append(s.clis, newCli)
 
 	}
 

@@ -15,6 +15,8 @@
 package server
 
 import (
+	"bytes"
+	"fmt"
 	"log"
 	"net"
 	"time"
@@ -24,13 +26,15 @@ type MemkvClient struct {
 	conn       *net.TCPConn
 	qbuf       []byte
 	createTime time.Time
+	db         *map[string]string
 }
 
-func MakeMemkvClient(c *net.TCPConn) *MemkvClient {
+func MakeMemkvClient(c *net.TCPConn, s *MemKvServer) *MemkvClient {
 	return &MemkvClient{
 		conn:       c,
 		createTime: time.Now(),
-		qbuf:       make([]byte, 128),
+		qbuf:       make([]byte, 1024),
+		db:         s.db,
 	}
 }
 
@@ -47,9 +51,28 @@ func (c *MemkvClient) ProccessRequest() {
 			return
 		}
 
-		log.Default().Printf("qbuf %v", c.qbuf)
+		parser := NewRESParser(bytes.NewReader(c.qbuf))
 
-		c.conn.Write(c.qbuf)
+		res, _ := parser.Parser()
+
+		switch res.(type) {
+		// client Arrays request
+		case []interface{}:
+			// log.Default().Printf("qbuf %s parser res %v type %s", string(c.qbuf), res, reflect.TypeOf(res))
+			arr := res.([]interface{})
+			if arr[0].(string) == "set" {
+				(*c.db)[arr[1].(string)] = arr[2].(string)
+				c.conn.Write([]byte("+OK\r\n"))
+			} else if arr[0].(string) == "get" {
+				val := (*c.db)[arr[1].(string)]
+				c.conn.Write([]byte(fmt.Sprintf("+%s\r\n", val)))
+			} else {
+				c.conn.Write([]byte("+OK\r\n"))
+			}
+		default:
+			c.conn.Write([]byte("-ERR\r\n"))
+		}
+
 	}
 
 }
