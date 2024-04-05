@@ -13,3 +13,52 @@
 // limitations under the License.
 
 package engine
+
+type ISet interface {
+	Add(item string)
+	Size() int
+	IsMember(key string) bool
+	Members() []string
+	RandMember() string
+	Rem(item string)
+}
+
+type SkipListSet struct {
+	sl *SkipList
+}
+
+func MakeSkipListSet() *SkipListSet {
+	return &SkipListSet{
+		sl: NewSkipList(),
+	}
+}
+
+func (set *SkipListSet) Add(item string) {
+	set.sl.Insert(item, nil)
+}
+
+func (set *SkipListSet) Size() int {
+	return set.sl.Length()
+}
+
+func (set *SkipListSet) IsMember(key string) bool {
+	ks, _ := set.sl.RangeQuery(key, key)
+	return len(ks) > 0
+}
+
+func (set *SkipListSet) Members() []string {
+	members := []string{}
+	keys, _ := set.sl.IterAllNodes()
+	for _, k := range keys {
+		members = append(members, k.(string))
+	}
+	return members
+}
+
+func (set *SkipListSet) RandMember() string {
+	return ""
+}
+
+func (set *SkipListSet) Rem(item string) {
+	set.sl.Delete(item)
+}

@@ -1,4 +1,4 @@
-module github.com/eraft-io/eraft
+module github.com/eraft-io/gomemkv
 
 go 1.21
 

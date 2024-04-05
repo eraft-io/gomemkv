@@ -89,3 +89,7 @@ func (s *GoString) ToUpper() *GoString {
 func (s *GoString) ToString() string {
 	return string(s.buf)
 }
+
+func (s *GoString) Buf() []byte {
+	return s.buf
+}

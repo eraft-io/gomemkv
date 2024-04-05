@@ -17,6 +17,8 @@ package server
 import (
 	"log"
 	"net"
+
+	"github.com/eraft-io/gomemkv/engine"
 )
 
 type ServerStat struct {
@@ -30,14 +32,14 @@ type MemKvServer struct {
 	// Network port
 	port string
 	clis []*MemkvClient
-	db   *map[string]string
+	db   engine.IHash
 }
 
 func MakeDefaultMemKvServer() *MemKvServer {
 	return &MemKvServer{
 		port: ":12306",
 		clis: []*MemkvClient{},
-		db:   &map[string]string{},
+		db:   engine.MakeSkipListHash(),
 	}
 }
 

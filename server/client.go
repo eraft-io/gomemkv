@@ -19,14 +19,17 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"strings"
 	"time"
+
+	"github.com/eraft-io/gomemkv/engine"
 )
 
 type MemkvClient struct {
 	conn       *net.TCPConn
 	qbuf       []byte
 	createTime time.Time
-	db         *map[string]string
+	db         engine.IHash
 }
 
 func MakeMemkvClient(c *net.TCPConn, s *MemKvServer) *MemkvClient {
@@ -35,6 +38,56 @@ func MakeMemkvClient(c *net.TCPConn, s *MemKvServer) *MemkvClient {
 		createTime: time.Now(),
 		qbuf:       make([]byte, 1024),
 		db:         s.db,
+	}
+}
+
+func (c *MemkvClient) ExecCmd(params []interface{}) {
+	switch strings.ToLower(params[0].(string)) {
+	case "set":
+		set := SetCommand{}
+		set.Exec(c, params)
+	case "get":
+		get := GetCommand{}
+		get.Exec(c, params)
+	case "del":
+		del := DelCommand{}
+		del.Exec(c, params)
+	case "append":
+		append := AppendCommand{}
+		append.Exec(c, params)
+	case "strlen":
+		strlen := StrLenCommand{}
+		strlen.Exec(c, params)
+	case "setrange":
+		setrange := SetRangeCommand{}
+		setrange.Exec(c, params)
+	case "lpush":
+		lpush := LPushCommand{}
+		lpush.Exec(c, params)
+	case "lpop":
+		lpop := LPopCommand{}
+		lpop.Exec(c, params)
+	case "rpush":
+		rpush := RPushCommand{}
+		rpush.Exec(c, params)
+	case "rpop":
+		rpop := RPopCommand{}
+		rpop.Exec(c, params)
+	case "lrange":
+		lrange := LRangeCommand{}
+		lrange.Exec(c, params)
+	case "llen":
+		llen := LLenCommand{}
+		llen.Exec(c, params)
+	case "sadd":
+		sadd := SAddCommand{}
+		sadd.Exec(c, params)
+	case "smembers":
+		smembers := SMembersCommand{}
+		smembers.Exec(c, params)
+	default:
+		unknow := UnknownCommand{}
+		unknow.Exec(c, params)
 	}
 }
 
@@ -55,22 +108,13 @@ func (c *MemkvClient) ProccessRequest() {
 
 		res, _ := parser.Parser()
 
-		switch res.(type) {
+		switch v := res.(type) {
 		// client Arrays request
 		case []interface{}:
-			// log.Default().Printf("qbuf %s parser res %v type %s", string(c.qbuf), res, reflect.TypeOf(res))
-			arr := res.([]interface{})
-			if arr[0].(string) == "set" {
-				(*c.db)[arr[1].(string)] = arr[2].(string)
-				c.conn.Write([]byte("+OK\r\n"))
-			} else if arr[0].(string) == "get" {
-				val := (*c.db)[arr[1].(string)]
-				c.conn.Write([]byte(fmt.Sprintf("+%s\r\n", val)))
-			} else {
-				c.conn.Write([]byte("+OK\r\n"))
-			}
+			params := res.([]interface{})
+			c.ExecCmd(params)
 		default:
-			c.conn.Write([]byte("-ERR\r\n"))
+			c.conn.Write([]byte(fmt.Sprintf("-ERR protocol paser result type %s\r\n", v)))
 		}
 
 	}

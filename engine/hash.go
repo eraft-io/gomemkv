@@ -13,3 +13,45 @@
 // limitations under the License.
 
 package engine
+
+type IHash interface {
+	Insert(key string, val interface{})
+
+	Delete(key string)
+
+	Search(key string) interface{}
+}
+
+type SkipListHash struct {
+	list *SkipList
+}
+
+func MakeSkipListHash() *SkipListHash {
+	return &SkipListHash{
+		list: NewSkipList(),
+	}
+}
+
+func (sh *SkipListHash) Insert(key string, val interface{}) {
+	sh.list.Insert(key, val)
+}
+
+func (sh *SkipListHash) Delete(key string) {
+	sh.list.Delete(key)
+}
+
+func (sh *SkipListHash) Search(key string) interface{} {
+	return sh.list.Search(key)
+}
+
+func (sh *SkipListHash) RandomQuery() (interface{}, interface{}) {
+	return sh.list.RandomQuery()
+}
+
+func (sh *SkipListHash) IterAllNodes() ([]interface{}, []interface{}) {
+	return sh.list.IterAllNodes()
+}
+
+func (sh *SkipListHash) Length() int {
+	return sh.list.Length()
+}

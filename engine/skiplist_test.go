@@ -13,3 +13,37 @@
 // limitations under the License.
 
 package engine
+
+import (
+	"fmt"
+	"testing"
+)
+
+func TestSkiplist(t *testing.T) {
+
+	list := NewSkipList()
+
+	list.Insert("b", "va")
+	list.Insert("a", "va")
+	list.Insert("c", "va")
+	list.Insert("d", "va")
+
+	list.Print()
+
+	list.Insert("d", "vb")
+
+	fmt.Printf("d -> %s \n", list.Search("d"))
+
+	list.Delete("b")
+
+	list.Print()
+
+	list.Insert("f", "vf")
+
+	fmt.Printf("iter all node\n")
+	list.IterAllNodes()
+
+	ks, vs := list.RangeQuery("a", "a")
+	fmt.Printf("%v  %v\n", ks, vs)
+
+}

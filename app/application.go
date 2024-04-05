@@ -15,7 +15,7 @@
 package main
 
 import (
-	"github.com/eraft-io/eraft/server"
+	"github.com/eraft-io/gomemkv/server"
 )
 
 func main() {
