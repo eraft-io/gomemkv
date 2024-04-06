@@ -15,10 +15,14 @@
 package server
 
 import (
+	"context"
 	"log"
 	"net"
+	"sync"
 
 	"github.com/eraft-io/gomemkv/engine"
+	pb "github.com/eraft-io/gomemkv/raftpb"
+	"github.com/eraft-io/gomemkv/replication"
 )
 
 type ServerStat struct {
@@ -30,9 +34,16 @@ type ServerStat struct {
 
 type MemKvServer struct {
 	// Network port
-	port string
-	clis []*MemkvClient
-	db   engine.IHash
+	port          string
+	grpcPort      string
+	clis          []*MemkvClient
+	db            engine.IHash
+	mu            sync.RWMutex
+	rf            *replication.Raft
+	applyCh       chan *pb.ApplyMsg
+	lastAppliedId int
+	notifyChans   map[int]chan *pb.CommandResponse
+	pb.UnimplementedRaftServiceServer
 }
 
 func MakeDefaultMemKvServer() *MemKvServer {
@@ -41,6 +52,31 @@ func MakeDefaultMemKvServer() *MemKvServer {
 		clis: []*MemkvClient{},
 		db:   engine.MakeSkipListHash(),
 	}
+}
+
+func (s *MemKvServer) RequestVote(ctx context.Context, req *pb.RequestVoteRequest) (*pb.RequestVoteResponse, error) {
+	resp := &pb.RequestVoteResponse{}
+	s.rf.HandleRequestVote(req, resp)
+	return resp, nil
+}
+
+func (s *MemKvServer) AppendEntries(ctx context.Context, req *pb.AppendEntriesRequest) (*pb.AppendEntriesResponse, error) {
+	resp := &pb.AppendEntriesResponse{}
+	s.rf.HandleAppendEntries(req, resp)
+	return resp, nil
+}
+
+func (s *MemKvServer) Snapshot(ctx context.Context, req *pb.InstallSnapshotRequest) (*pb.InstallSnapshotResponse, error) {
+	resp := &pb.InstallSnapshotResponse{}
+	// s.rf.HandleInstallSnapshot(req, resp)
+	return resp, nil
+}
+
+func (s *MemKvServer) getNotifyChan(index int) chan *pb.CommandResponse {
+	if _, ok := s.notifyChans[index]; !ok {
+		s.notifyChans[index] = make(chan *pb.CommandResponse, 1)
+	}
+	return s.notifyChans[index]
 }
 
 func (s *MemKvServer) Boot() {

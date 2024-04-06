@@ -15,8 +15,6 @@
 package server
 
 import (
-	"bytes"
-	"fmt"
 	"log"
 	"net"
 	"strings"
@@ -30,6 +28,7 @@ type MemkvClient struct {
 	qbuf       []byte
 	createTime time.Time
 	db         engine.IHash
+	svr        *MemKvServer
 }
 
 func MakeMemkvClient(c *net.TCPConn, s *MemKvServer) *MemkvClient {
@@ -38,6 +37,7 @@ func MakeMemkvClient(c *net.TCPConn, s *MemKvServer) *MemkvClient {
 		createTime: time.Now(),
 		qbuf:       make([]byte, 1024),
 		db:         s.db,
+		svr:        s,
 	}
 }
 
@@ -113,18 +113,29 @@ func (c *MemkvClient) ProccessRequest() {
 			return
 		}
 
-		parser := NewRESParser(bytes.NewReader(c.qbuf))
-
-		res, _ := parser.Parser()
-
-		switch v := res.(type) {
-		// client Arrays request
-		case []interface{}:
-			params := res.([]interface{})
-			c.ExecCmd(params)
-		default:
-			c.conn.Write([]byte(fmt.Sprintf("-ERR protocol paser result type %s\r\n", v)))
+		// propose to raft to replicate
+		id, _, isLeader := c.svr.rf.Propose(c.qbuf)
+		if !isLeader {
+			c.conn.Write([]byte("not leader"))
+			continue
 		}
+
+		c.svr.mu.Lock()
+		ch := c.svr.getNotifyChan(id)
+		c.svr.mu.Unlock()
+
+		select {
+		case res := <-ch:
+			log.Default().Printf("%v", res)
+		case <-time.After(time.Second * 5):
+			c.conn.Write([]byte("execute timeout"))
+		}
+
+		go func() {
+			c.svr.mu.Lock()
+			delete(c.svr.notifyChans, id)
+			c.svr.mu.Unlock()
+		}()
 
 	}
 
