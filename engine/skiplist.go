@@ -17,6 +17,7 @@ package engine
 import (
 	"fmt"
 	"math/rand"
+	"time"
 )
 
 const MaxLevel = 32
@@ -166,9 +167,12 @@ func (list *SkipList) IterAllNodes() ([]interface{}, []interface{}) {
 
 func (list *SkipList) RandomQuery() (interface{}, interface{}) {
 	current := list.header
+	list.rand = rand.New(rand.NewSource(time.Now().Unix()))
 	level := rand.Intn(list.level)
 	for i := level; i >= 0; i-- {
-		current = current.forward[i]
+		if current.forward[i] != nil {
+			current = current.forward[i]
+		}
 	}
 	return current.key, current.value
 }

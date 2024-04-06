@@ -56,7 +56,8 @@ func (set *SkipListSet) Members() []string {
 }
 
 func (set *SkipListSet) RandMember() string {
-	return ""
+	ks, _ := set.sl.RandomQuery()
+	return ks.(string)
 }
 
 func (set *SkipListSet) Rem(item string) {

@@ -12,11 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+#!/bin/sh
+export PATH="$PATH:$(go env GOPATH)/bin"
 
-default: gomemkv
+go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.28
+go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2
 
-gomemkv:
-	go build -o output/gomemkv app/application.go
-
-clean:
-	rm -rf output/*
+protoc -I ../pb ../pb/raftbasic.proto --go_out=../pb/ --go-grpc_out=../pb/

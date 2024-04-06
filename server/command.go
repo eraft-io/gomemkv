@@ -304,3 +304,48 @@ func (smem *SMembersCommand) Exec(c *MemkvClient, params []interface{}) error {
 	_, err := c.conn.Write([]byte(replyBuf))
 	return err
 }
+
+type SCardCommand struct{}
+
+func (scard *SCardCommand) Exec(c *MemkvClient, params []interface{}) error {
+	key := params[1].(string)
+	set := c.db.Search(key)
+	if set == nil {
+		_, err := c.conn.Write([]byte(fmt.Sprintf(":%d\r\n", 0)))
+		return err
+	}
+	_, err := c.conn.Write([]byte(fmt.Sprintf(":%d\r\n", set.(*engine.SkipListSet).Size())))
+	return err
+}
+
+type SRandMemberCommand struct{}
+
+func (srandMember *SRandMemberCommand) Exec(c *MemkvClient, params []interface{}) error {
+	key := params[1].(string)
+	set := c.db.Search(key)
+	if set == nil {
+		_, err := c.conn.Write([]byte("$-1\r\n"))
+		return err
+	}
+	randMember := set.(*engine.SkipListSet).RandMember()
+	_, err := c.conn.Write([]byte(fmt.Sprintf("+%s\r\n", randMember)))
+	return err
+}
+
+type SRemCommand struct{}
+
+func (srem *SRemCommand) Exec(c *MemkvClient, params []interface{}) error {
+	key := params[1].(string)
+	set := c.db.Search(key)
+	if set == nil {
+		_, err := c.conn.Write([]byte(fmt.Sprintf(":%d\r\n", 0)))
+		return err
+	}
+	if !set.(*engine.SkipListSet).IsMember(params[2].(string)) {
+		_, err := c.conn.Write([]byte(fmt.Sprintf(":%d\r\n", 0)))
+		return err
+	}
+	set.(*engine.SkipListSet).Rem(params[2].(string))
+	_, err := c.conn.Write([]byte(fmt.Sprintf(":%d\r\n", 1)))
+	return err
+}

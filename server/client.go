@@ -85,6 +85,15 @@ func (c *MemkvClient) ExecCmd(params []interface{}) {
 	case "smembers":
 		smembers := SMembersCommand{}
 		smembers.Exec(c, params)
+	case "scard":
+		scard := SCardCommand{}
+		scard.Exec(c, params)
+	case "srandmember":
+		srandmember := SRandMemberCommand{}
+		srandmember.Exec(c, params)
+	case "srem":
+		srem := SRemCommand{}
+		srem.Exec(c, params)
 	default:
 		unknow := UnknownCommand{}
 		unknow.Exec(c, params)
