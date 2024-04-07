@@ -23,3 +23,15 @@ smemebers | O(N) |
 scard | O(1) | 
 srandmember | O(1) | 
 srem | O(N) | 
+
+## run demo
+
+execute follow commands in shell, have fun!
+
+```
+./gomemkv 0
+./gomemkv 1
+./gomemkv 2
+
+redis-cli -p 12306
+```

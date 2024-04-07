@@ -18,49 +18,48 @@ import (
 	pb "github.com/eraft-io/gomemkv/raftpb"
 )
 
-type MemWal struct {
-	firstId   uint64
-	lastId    uint64
-	appliedId uint64
-	entries   []*pb.Entry
+type MemLog struct {
+	firstId uint64
+	lastId  uint64
+	entries []*pb.Entry
 }
 
-func MakeMemWal() *MemWal {
+func MakeMemLog() *MemLog {
 	// add an empty entry
-	ent := &pb.Entry{}
 	entries := []*pb.Entry{}
+	ent := &pb.Entry{}
 	entries = append(entries, ent)
-	return &MemWal{entries: entries, firstId: 0, lastId: 1}
+	return &MemLog{entries: entries, firstId: 0, lastId: 1}
 }
 
-func (memWal *MemWal) GetFirstEntry() *pb.Entry {
+func (memWal *MemLog) GetFirstEntry() *pb.Entry {
 	return memWal.entries[0]
 }
 
-func (memWal *MemWal) GetLastEntry() *pb.Entry {
+func (memWal *MemLog) GetLastEntry() *pb.Entry {
 	return memWal.entries[len(memWal.entries)-1]
 }
 
-func (memVal *MemWal) Count() int {
+func (memVal *MemLog) Count() int {
 	return len(memVal.entries)
 }
 
-func (memVal *MemWal) EraseBefore(id int64) []*pb.Entry {
+func (memVal *MemLog) EraseBefore(id int64) []*pb.Entry {
 	return memVal.entries[id:]
 }
 
-func (memVal *MemWal) EraseAfter(id int64) []*pb.Entry {
+func (memVal *MemLog) EraseAfter(id int64) []*pb.Entry {
 	return memVal.entries[:id]
 }
 
-func (memVal *MemWal) GetRange(start, end int64) []*pb.Entry {
-	return memVal.entries[start:end]
+func (memVal *MemLog) GetRange(start, end int64) []*pb.Entry {
+	return memVal.entries[start : end+1]
 }
 
-func (memVal *MemWal) Append(ent *pb.Entry) {
+func (memVal *MemLog) Append(ent *pb.Entry) {
 	memVal.entries = append(memVal.entries, ent)
 }
 
-func (memVal *MemWal) GetEntry(id int64) *pb.Entry {
+func (memVal *MemLog) GetEntry(id int64) *pb.Entry {
 	return memVal.entries[id]
 }

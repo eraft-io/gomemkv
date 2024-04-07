@@ -16,14 +16,22 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"net"
+	"strconv"
 	"sync"
+	"sync/atomic"
 
 	"github.com/eraft-io/gomemkv/engine"
 	pb "github.com/eraft-io/gomemkv/raftpb"
 	"github.com/eraft-io/gomemkv/replication"
+	"github.com/eraft-io/gomemkv/storage"
 )
+
+// for demo test
+var DefaultPeersMap = map[int]string{0: ":8088", 1: ":8089", 2: ":8090"}
+var DefaultPeerClientsMap = map[int]string{0: ":12306", 1: ":12307", 2: ":12308"}
 
 type ServerStat struct {
 	CommandsProcessed uint64
@@ -36,22 +44,47 @@ type MemKvServer struct {
 	// Network port
 	port          string
 	grpcPort      string
-	clis          []*MemkvClient
+	dead          int32
+	cliId         int
+	clis          map[int]*MemkvClient
 	db            engine.IHash
 	mu            sync.RWMutex
 	rf            *replication.Raft
 	applyCh       chan *pb.ApplyMsg
+	stopApplyCh   chan interface{}
 	lastAppliedId int
 	notifyChans   map[int]chan *pb.CommandResponse
 	pb.UnimplementedRaftServiceServer
 }
 
-func MakeDefaultMemKvServer() *MemKvServer {
-	return &MemKvServer{
-		port: ":12306",
-		clis: []*MemkvClient{},
-		db:   engine.MakeSkipListHash(),
+func MakeDefaultMemKvServer(nodeId int) *MemKvServer {
+	peerEnds := []*replication.RaftPeerNode{}
+	for id, addr := range DefaultPeersMap {
+		newEnd := replication.MakeRaftPeerNode(addr, uint64(id))
+		peerEnds = append(peerEnds, newEnd)
 	}
+	newApplyCh := make(chan *pb.ApplyMsg)
+	logdb_eng := storage.EngineFactory("leveldb", "./data/log_"+strconv.Itoa(nodeId))
+
+	newRf := replication.MakeRaft(peerEnds, int64(nodeId), logdb_eng, newApplyCh, 2000, 6000)
+	kvSvr := &MemKvServer{
+		rf:            newRf,
+		port:          DefaultPeerClientsMap[nodeId],
+		clis:          map[int]*MemkvClient{},
+		db:            engine.MakeSkipListHash(),
+		grpcPort:      DefaultPeersMap[nodeId],
+		dead:          0,
+		lastAppliedId: 0,
+		applyCh:       newApplyCh,
+		cliId:         0,
+		notifyChans:   make(map[int]chan *pb.CommandResponse),
+	}
+	kvSvr.stopApplyCh = make(chan interface{})
+	return kvSvr
+}
+
+func (s *MemKvServer) IsKilled() bool {
+	return atomic.LoadInt32(&s.dead) == 1
 }
 
 func (s *MemKvServer) RequestVote(ctx context.Context, req *pb.RequestVoteRequest) (*pb.RequestVoteResponse, error) {
@@ -72,11 +105,54 @@ func (s *MemKvServer) Snapshot(ctx context.Context, req *pb.InstallSnapshotReque
 	return resp, nil
 }
 
-func (s *MemKvServer) getNotifyChan(index int) chan *pb.CommandResponse {
+func (s *MemKvServer) GetNotifyChan(index int) chan *pb.CommandResponse {
 	if _, ok := s.notifyChans[index]; !ok {
 		s.notifyChans[index] = make(chan *pb.CommandResponse, 1)
 	}
 	return s.notifyChans[index]
+}
+
+func (s *MemKvServer) AppliedAndExecCmd(done <-chan interface{}) {
+
+	for !s.IsKilled() {
+
+		select {
+		case <-done:
+			return
+		case appliedMsg := <-s.applyCh:
+			if appliedMsg.CommandValid {
+				s.mu.Lock()
+
+				if appliedMsg.CommandIndex <= int64(s.lastAppliedId) {
+					s.mu.Unlock()
+					continue
+				}
+
+				cmdParams := &CmdParams{}
+				json.Unmarshal(appliedMsg.Command, &cmdParams)
+
+				s.lastAppliedId = int(appliedMsg.CommandIndex)
+
+				if s.rf.IsLeader() {
+					reply_buf, _ := s.clis[int(appliedMsg.Clientid)].ExecCmd(cmdParams.Params)
+					s.clis[int(appliedMsg.Clientid)].conn.Write(reply_buf)
+				} else {
+					// mock client
+					newCli := MakeMemkvClient(nil, s, 99999)
+					newCli.ExecCmd(cmdParams.Params)
+				}
+
+				cmdResp := &pb.CommandResponse{}
+				cmdResp.Value = "OK"
+				ch := s.GetNotifyChan(int(appliedMsg.CommandIndex))
+				ch <- cmdResp
+
+				s.mu.Unlock()
+			}
+		}
+
+	}
+
 }
 
 func (s *MemKvServer) Boot() {
@@ -91,6 +167,8 @@ func (s *MemKvServer) Boot() {
 		log.Fatal(err.Error())
 	}
 
+	go s.AppliedAndExecCmd(s.stopApplyCh)
+
 	for {
 
 		newConn, err := listener.AcceptTCP()
@@ -98,11 +176,11 @@ func (s *MemKvServer) Boot() {
 			log.Default().Printf("listener accept connection error %v", err.Error())
 			continue
 		}
-
-		newCli := MakeMemkvClient(newConn, s)
+		s.cliId++
+		newCli := MakeMemkvClient(newConn, s, s.cliId)
 		newCli.conn.SetNoDelay(false)
 		go newCli.ProccessRequest()
-		s.clis = append(s.clis, newCli)
+		s.clis[s.cliId] = newCli
 
 	}
 

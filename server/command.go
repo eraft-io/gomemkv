@@ -23,109 +23,101 @@ import (
 )
 
 type ICommand interface {
-	Exec(*MemkvClient, []interface{}) error
+	Exec(*MemkvClient, []string) ([]byte, error)
 }
 
 type SetCommand struct {
 }
 
-func (set *SetCommand) Exec(c *MemkvClient, params []interface{}) error {
-	c.db.Insert(params[1].(string), engine.MakeGoStringFromByteSlice([]byte(params[2].(string))))
-	_, err := c.conn.Write([]byte("+OK\r\n"))
-	return err
+func (set *SetCommand) Exec(c *MemkvClient, params []string) ([]byte, error) {
+	c.db.Insert(params[1], engine.MakeGoStringFromByteSlice([]byte(params[2])))
+	if c.svr.rf.IsLeader() {
+		return []byte("+OK\r\n"), nil
+	}
+	return []byte{}, nil
 }
 
 type GetCommand struct {
 }
 
-func (get *GetCommand) Exec(c *MemkvClient, params []interface{}) error {
-	val := c.db.Search(params[1].(string))
+func (get *GetCommand) Exec(c *MemkvClient, params []string) ([]byte, error) {
+	val := c.db.Search(params[1])
 	if val == nil {
-		_, err := c.conn.Write([]byte("$-1\r\n"))
-		return err
+		return []byte("$-1\r\n"), nil
 	}
 	valStr := val.(*engine.GoString).ToString()
-	_, err := c.conn.Write([]byte(fmt.Sprintf("+%s\r\n", valStr)))
-	return err
+	return []byte(fmt.Sprintf("+%s\r\n", valStr)), nil
 }
 
 type AppendCommand struct{}
 
-func (append *AppendCommand) Exec(c *MemkvClient, params []interface{}) error {
-	val := c.db.Search(params[1].(string))
+func (append *AppendCommand) Exec(c *MemkvClient, params []string) ([]byte, error) {
+	val := c.db.Search(params[1])
 	if val == nil {
-		newVal := engine.MakeGoStringFromByteSlice([]byte(params[2].(string)))
-		c.db.Insert(params[1].(string), newVal)
-		_, err := c.conn.Write([]byte(fmt.Sprintf(":%d\r\n", newVal.Len())))
-		return err
+		newVal := engine.MakeGoStringFromByteSlice([]byte(params[2]))
+		c.db.Insert(params[1], newVal)
+		return []byte(fmt.Sprintf(":%d\r\n", newVal.Len())), nil
 	}
-	newVal := val.(*engine.GoString).AppendString(params[2].(string))
-	c.db.Insert(params[1].(string), newVal)
-	_, err := c.conn.Write([]byte(fmt.Sprintf(":%d\r\n", newVal.Len())))
-	return err
+	newVal := val.(*engine.GoString).AppendString(params[2])
+	c.db.Insert(params[1], newVal)
+	return []byte(fmt.Sprintf(":%d\r\n", newVal.Len())), nil
 }
 
 type StrLenCommand struct {
 }
 
-func (strlen *StrLenCommand) Exec(c *MemkvClient, params []interface{}) error {
-	val := c.db.Search(params[1].(string))
+func (strlen *StrLenCommand) Exec(c *MemkvClient, params []string) ([]byte, error) {
+	val := c.db.Search(params[1])
 	if val == nil {
-		_, err := c.conn.Write([]byte(fmt.Sprintf(":%d\r\n", 0)))
-		return err
+		return []byte(fmt.Sprintf(":%d\r\n", 0)), nil
 	}
-	_, err := c.conn.Write([]byte(fmt.Sprintf(":%d\r\n", val.(*engine.GoString).Len())))
-	return err
+	return []byte(fmt.Sprintf(":%d\r\n", val.(*engine.GoString).Len())), nil
 }
 
 type DelCommand struct {
 }
 
-func (del *DelCommand) Exec(c *MemkvClient, params []interface{}) error {
-	c.db.Delete(params[1].(string))
-	_, err := c.conn.Write([]byte("+OK\r\n"))
-	return err
+func (del *DelCommand) Exec(c *MemkvClient, params []string) ([]byte, error) {
+	c.db.Delete(params[1])
+	return []byte("+OK\r\n"), nil
 }
 
 type SetRangeCommand struct {
 }
 
-func (setrange *SetRangeCommand) Exec(c *MemkvClient, params []interface{}) error {
-	val := c.db.Search(params[1].(string))
-	offset, err := strconv.Atoi(params[2].(string))
+func (setrange *SetRangeCommand) Exec(c *MemkvClient, params []string) ([]byte, error) {
+	val := c.db.Search(params[1])
+	offset, err := strconv.Atoi(params[2])
 	if err != nil {
-		return err
+		return []byte{}, err
 	}
 	if val == nil {
 		newVal := engine.MakeGoStringFromByteSlice([]byte{})
 		for i := 0; i < offset; i++ {
 			newVal.AppendString(" ")
 		}
-		newVal.AppendString(params[3].(string))
+		newVal.AppendString(params[3])
 		log.Default().Println(newVal.ToString())
-		c.db.Insert(params[1].(string), newVal)
-		_, err := c.conn.Write([]byte(fmt.Sprintf(":%d\r\n", newVal.Len())))
-		return err
+		c.db.Insert(params[1], newVal)
+		return []byte(fmt.Sprintf(":%d\r\n", newVal.Len())), nil
 	}
-	val.(*engine.GoString).SetRange(int64(offset), params[3].(string))
-	_, err_ := c.conn.Write([]byte(fmt.Sprintf(":%d\r\n", val.(*engine.GoString).Len())))
-	return err_
+	val.(*engine.GoString).SetRange(int64(offset), params[3])
+	return []byte(fmt.Sprintf(":%d\r\n", val.(*engine.GoString).Len())), nil
 }
 
 type UnknownCommand struct {
 }
 
-func (s *UnknownCommand) Exec(c *MemkvClient, params []interface{}) error {
-	_, err := c.conn.Write([]byte(fmt.Sprintf("-ERR unknown command %s\r\n", params[0].(string))))
-	return err
+func (s *UnknownCommand) Exec(c *MemkvClient, params []string) ([]byte, error) {
+	return []byte(fmt.Sprintf("-ERR unknown command %s\r\n", params[0])), nil
 }
 
 type LPushCommand struct {
 }
 
-func (lpush *LPushCommand) Exec(c *MemkvClient, params []interface{}) error {
+func (lpush *LPushCommand) Exec(c *MemkvClient, params []string) ([]byte, error) {
 
-	oldList := c.db.Search(params[1].(string))
+	oldList := c.db.Search(params[1])
 	if oldList == nil {
 		oldList = engine.MakeDoubleLinkedList()
 	}
@@ -134,51 +126,46 @@ func (lpush *LPushCommand) Exec(c *MemkvClient, params []interface{}) error {
 		oldList.(*engine.DoublyLinkedList).Prepend(params[i])
 	}
 
-	c.db.Insert(params[1].(string), oldList)
+	c.db.Insert(params[1], oldList)
 
-	_, err := c.conn.Write([]byte(fmt.Sprintf(":%d\r\n", oldList.(*engine.DoublyLinkedList).Len())))
-	return err
+	return []byte(fmt.Sprintf(":%d\r\n", oldList.(*engine.DoublyLinkedList).Len())), nil
 }
 
 type LPopCommand struct {
 }
 
-func (lpop *LPopCommand) Exec(c *MemkvClient, params []interface{}) error {
-	oldList := c.db.Search(params[1].(string))
+func (lpop *LPopCommand) Exec(c *MemkvClient, params []string) ([]byte, error) {
+	oldList := c.db.Search(params[1])
 	if oldList == nil {
-		_, err := c.conn.Write([]byte("$-1\r\n"))
-		return err
+		return []byte("$-1\r\n"), nil
 	}
 
 	head, err := oldList.(*engine.DoublyLinkedList).PopHead()
 	if err != nil {
-		return err
+		return []byte{}, err
 	}
 
-	c.db.Insert(params[1].(string), oldList)
+	c.db.Insert(params[1], oldList)
 
-	_, err = c.conn.Write([]byte(fmt.Sprintf("+%s\r\n", head.(string))))
-	return err
+	return []byte(fmt.Sprintf("+%s\r\n", head.(string))), nil
 }
 
 type LLenCommand struct {
 }
 
-func (llen *LLenCommand) Exec(c *MemkvClient, params []interface{}) error {
-	oldList := c.db.Search(params[1].(string))
+func (llen *LLenCommand) Exec(c *MemkvClient, params []string) ([]byte, error) {
+	oldList := c.db.Search(params[1])
 	if oldList == nil {
-		_, err := c.conn.Write([]byte(fmt.Sprintf(":%d\r\n", 0)))
-		return err
+		return []byte(fmt.Sprintf(":%d\r\n", 0)), nil
 	}
-	_, err := c.conn.Write([]byte(fmt.Sprintf(":%d\r\n", oldList.(*engine.DoublyLinkedList).Len())))
-	return err
+	return []byte(fmt.Sprintf(":%d\r\n", oldList.(*engine.DoublyLinkedList).Len())), nil
 }
 
 type RPushCommand struct {
 }
 
-func (rpush *RPushCommand) Exec(c *MemkvClient, params []interface{}) error {
-	oldList := c.db.Search(params[1].(string))
+func (rpush *RPushCommand) Exec(c *MemkvClient, params []string) ([]byte, error) {
+	oldList := c.db.Search(params[1])
 	if oldList == nil {
 		oldList = engine.MakeDoubleLinkedList()
 	}
@@ -187,59 +174,56 @@ func (rpush *RPushCommand) Exec(c *MemkvClient, params []interface{}) error {
 		oldList.(*engine.DoublyLinkedList).Append(params[i])
 	}
 
-	c.db.Insert(params[1].(string), oldList)
+	c.db.Insert(params[1], oldList)
 
-	_, err := c.conn.Write([]byte(fmt.Sprintf(":%d\r\n", oldList.(*engine.DoublyLinkedList).Len())))
-	return err
+	return []byte(fmt.Sprintf(":%d\r\n", oldList.(*engine.DoublyLinkedList).Len())), nil
 }
 
 type RPopCommand struct {
 }
 
-func (rpop *RPopCommand) Exec(c *MemkvClient, params []interface{}) error {
-	oldList := c.db.Search(params[1].(string))
+func (rpop *RPopCommand) Exec(c *MemkvClient, params []string) ([]byte, error) {
+	oldList := c.db.Search(params[1])
 	if oldList == nil {
-		_, err := c.conn.Write([]byte("$-1\r\n"))
-		return err
+		return []byte("$-1\r\n"), nil
 	}
 
 	tail, err := oldList.(*engine.DoublyLinkedList).PopTail()
 	if err != nil {
-		return err
+		return []byte{}, err
 	}
 
-	c.db.Insert(params[1].(string), oldList)
+	c.db.Insert(params[1], oldList)
 
-	_, err = c.conn.Write([]byte(fmt.Sprintf("+%s\r\n", tail.(string))))
-	return err
+	return []byte(fmt.Sprintf("+%s\r\n", tail.(string))), nil
 }
 
 type LRangeCommand struct {
 }
 
-func (lrange *LRangeCommand) Exec(c *MemkvClient, params []interface{}) error {
+func (lrange *LRangeCommand) Exec(c *MemkvClient, params []string) ([]byte, error) {
 
-	key := params[1].(string)
+	key := params[1]
 
-	startIdx, err := strconv.Atoi(params[2].(string))
+	startIdx, err := strconv.Atoi(params[2])
 	if err != nil {
-		return err
+		return []byte{}, err
 	}
 
-	endIdx, err := strconv.Atoi(params[3].(string))
+	endIdx, err := strconv.Atoi(params[3])
 	if err != nil {
-		return err
+		return []byte{}, err
 	}
 
 	list := c.db.Search(key)
 	if list == nil {
 		_, err := c.conn.Write([]byte("*0\r\n"))
-		return err
+		return []byte{}, err
 	}
 
 	entrys, err := list.(*engine.DoublyLinkedList).IndexRangeQuery(startIdx, endIdx)
 	if err != nil {
-		return err
+		return []byte{}, err
 	}
 
 	replyBuf := "*" + strconv.Itoa(len(entrys)) + "\r\n"
@@ -251,45 +235,39 @@ func (lrange *LRangeCommand) Exec(c *MemkvClient, params []interface{}) error {
 		replyBuf += "\r\n"
 	}
 
-	_, err = c.conn.Write([]byte(replyBuf))
-
-	return err
+	return []byte(replyBuf), nil
 }
 
 type SAddCommand struct {
 }
 
-func (sadd *SAddCommand) Exec(c *MemkvClient, params []interface{}) error {
-	key := params[1].(string)
+func (sadd *SAddCommand) Exec(c *MemkvClient, params []string) ([]byte, error) {
+	key := params[1]
 	val := c.db.Search(key)
 	if val != nil {
 		oldSet := val.(*engine.SkipListSet)
-		if oldSet.IsMember(params[2].(string)) {
-			_, err := c.conn.Write([]byte(fmt.Sprintf(":%d\r\n", 0)))
-			return err
+		if oldSet.IsMember(params[2]) {
+			return []byte(fmt.Sprintf(":%d\r\n", 0)), nil
 		}
-		oldSet.Add(params[2].(string))
+		oldSet.Add(params[2])
 		c.db.Insert(key, oldSet)
-		_, err := c.conn.Write([]byte(fmt.Sprintf(":%d\r\n", 1)))
-		return err
+		return []byte(fmt.Sprintf(":%d\r\n", 1)), nil
 	} else {
 		setVal := engine.MakeSkipListSet()
-		setVal.Add(params[2].(string))
+		setVal.Add(params[2])
 		c.db.Insert(key, setVal)
-		_, err := c.conn.Write([]byte(fmt.Sprintf(":%d\r\n", 1)))
-		return err
+		return []byte(fmt.Sprintf(":%d\r\n", 1)), nil
 	}
 }
 
 type SMembersCommand struct {
 }
 
-func (smem *SMembersCommand) Exec(c *MemkvClient, params []interface{}) error {
-	key := params[1].(string)
+func (smem *SMembersCommand) Exec(c *MemkvClient, params []string) ([]byte, error) {
+	key := params[1]
 	set := c.db.Search(key)
 	if set == nil {
-		_, err := c.conn.Write([]byte("*0\r\n"))
-		return err
+		return []byte("*0\r\n"), nil
 	}
 	members := set.(*engine.SkipListSet).Members()
 	replyBuf := "*" + strconv.Itoa(len(members)) + "\r\n"
@@ -301,51 +279,43 @@ func (smem *SMembersCommand) Exec(c *MemkvClient, params []interface{}) error {
 		replyBuf += "\r\n"
 	}
 
-	_, err := c.conn.Write([]byte(replyBuf))
-	return err
+	return []byte(replyBuf), nil
 }
 
 type SCardCommand struct{}
 
-func (scard *SCardCommand) Exec(c *MemkvClient, params []interface{}) error {
-	key := params[1].(string)
+func (scard *SCardCommand) Exec(c *MemkvClient, params []string) ([]byte, error) {
+	key := params[1]
 	set := c.db.Search(key)
 	if set == nil {
-		_, err := c.conn.Write([]byte(fmt.Sprintf(":%d\r\n", 0)))
-		return err
+		return []byte(fmt.Sprintf(":%d\r\n", 0)), nil
 	}
-	_, err := c.conn.Write([]byte(fmt.Sprintf(":%d\r\n", set.(*engine.SkipListSet).Size())))
-	return err
+	return []byte(fmt.Sprintf(":%d\r\n", set.(*engine.SkipListSet).Size())), nil
 }
 
 type SRandMemberCommand struct{}
 
-func (srandMember *SRandMemberCommand) Exec(c *MemkvClient, params []interface{}) error {
-	key := params[1].(string)
+func (srandMember *SRandMemberCommand) Exec(c *MemkvClient, params []string) ([]byte, error) {
+	key := params[1]
 	set := c.db.Search(key)
 	if set == nil {
-		_, err := c.conn.Write([]byte("$-1\r\n"))
-		return err
+		return []byte("$-1\r\n"), nil
 	}
 	randMember := set.(*engine.SkipListSet).RandMember()
-	_, err := c.conn.Write([]byte(fmt.Sprintf("+%s\r\n", randMember)))
-	return err
+	return []byte(fmt.Sprintf("+%s\r\n", randMember)), nil
 }
 
 type SRemCommand struct{}
 
-func (srem *SRemCommand) Exec(c *MemkvClient, params []interface{}) error {
-	key := params[1].(string)
+func (srem *SRemCommand) Exec(c *MemkvClient, params []string) ([]byte, error) {
+	key := params[1]
 	set := c.db.Search(key)
 	if set == nil {
-		_, err := c.conn.Write([]byte(fmt.Sprintf(":%d\r\n", 0)))
-		return err
+		return []byte(fmt.Sprintf(":%d\r\n", 0)), nil
 	}
-	if !set.(*engine.SkipListSet).IsMember(params[2].(string)) {
-		_, err := c.conn.Write([]byte(fmt.Sprintf(":%d\r\n", 0)))
-		return err
+	if !set.(*engine.SkipListSet).IsMember(params[2]) {
+		return []byte(fmt.Sprintf(":%d\r\n", 0)), nil
 	}
-	set.(*engine.SkipListSet).Rem(params[2].(string))
-	_, err := c.conn.Write([]byte(fmt.Sprintf(":%d\r\n", 1)))
-	return err
+	set.(*engine.SkipListSet).Rem(params[2])
+	return []byte(fmt.Sprintf(":%d\r\n", 1)), nil
 }

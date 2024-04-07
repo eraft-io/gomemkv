@@ -14,36 +14,18 @@
 
 package replication
 
-import (
-	"fmt"
-	"math/rand"
-	"time"
+const (
+	VOTE_FOR_NO_ONE = -1
 )
 
-func RandIntRange(min int, max int) int {
-	s1 := rand.NewSource(time.Now().UnixNano())
-	r1 := rand.New(s1)
-	return r1.Intn(max-min) + int(min)
-}
+var RAFTLOG_PREFIX = []byte{0x02, 0x00, 0x00, 0x24}
 
-func MakeAnRandomElectionTimeout(base int) int {
-	return RandIntRange(base, 2*base)
-}
+var FIRST_IDX_KEY = []byte{0x88, 0x88}
 
-func PrintDebugLog(msg string) {
-	fmt.Printf("%s %s \n", time.Now().Format("2006-01-02 15:04:05"), msg)
-}
+var LAST_IDX_KEY = []byte{0x99, 0x99}
 
-func Min(x, y int) int {
-	if x > y {
-		return y
-	}
-	return x
-}
+var RAFT_STATE_KEY = []byte{0x19, 0x49}
 
-func Max(x, y int) int {
-	if x < y {
-		return y
-	}
-	return x
-}
+const INIT_LOG_INDEX = 0
+
+var SNAPSHOT_STATE_KEY = []byte{0x19, 0x97}

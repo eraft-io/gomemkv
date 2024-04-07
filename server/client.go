@@ -15,6 +15,9 @@
 package server
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
 	"log"
 	"net"
 	"strings"
@@ -29,75 +32,81 @@ type MemkvClient struct {
 	createTime time.Time
 	db         engine.IHash
 	svr        *MemKvServer
+	id         int
 }
 
-func MakeMemkvClient(c *net.TCPConn, s *MemKvServer) *MemkvClient {
+func MakeMemkvClient(c *net.TCPConn, s *MemKvServer, id int) *MemkvClient {
 	return &MemkvClient{
 		conn:       c,
 		createTime: time.Now(),
 		qbuf:       make([]byte, 1024),
 		db:         s.db,
 		svr:        s,
+		id:         id,
 	}
 }
 
-func (c *MemkvClient) ExecCmd(params []interface{}) {
-	switch strings.ToLower(params[0].(string)) {
+func (c *MemkvClient) ExecCmd(params []string) ([]byte, error) {
+	switch strings.ToLower(params[0]) {
 	case "set":
 		set := SetCommand{}
-		set.Exec(c, params)
+		return set.Exec(c, params)
 	case "get":
 		get := GetCommand{}
-		get.Exec(c, params)
+		return get.Exec(c, params)
 	case "del":
 		del := DelCommand{}
-		del.Exec(c, params)
+		return del.Exec(c, params)
 	case "append":
 		append := AppendCommand{}
-		append.Exec(c, params)
+		return append.Exec(c, params)
 	case "strlen":
 		strlen := StrLenCommand{}
-		strlen.Exec(c, params)
+		return strlen.Exec(c, params)
 	case "setrange":
 		setrange := SetRangeCommand{}
-		setrange.Exec(c, params)
+		return setrange.Exec(c, params)
 	case "lpush":
 		lpush := LPushCommand{}
-		lpush.Exec(c, params)
+		return lpush.Exec(c, params)
 	case "lpop":
 		lpop := LPopCommand{}
-		lpop.Exec(c, params)
+		return lpop.Exec(c, params)
 	case "rpush":
 		rpush := RPushCommand{}
-		rpush.Exec(c, params)
+		return rpush.Exec(c, params)
 	case "rpop":
 		rpop := RPopCommand{}
-		rpop.Exec(c, params)
+		return rpop.Exec(c, params)
 	case "lrange":
 		lrange := LRangeCommand{}
-		lrange.Exec(c, params)
+		return lrange.Exec(c, params)
 	case "llen":
 		llen := LLenCommand{}
-		llen.Exec(c, params)
+		return llen.Exec(c, params)
 	case "sadd":
 		sadd := SAddCommand{}
-		sadd.Exec(c, params)
+		return sadd.Exec(c, params)
 	case "smembers":
 		smembers := SMembersCommand{}
-		smembers.Exec(c, params)
+		return smembers.Exec(c, params)
 	case "scard":
 		scard := SCardCommand{}
-		scard.Exec(c, params)
+		return scard.Exec(c, params)
 	case "srandmember":
 		srandmember := SRandMemberCommand{}
-		srandmember.Exec(c, params)
+		return srandmember.Exec(c, params)
 	case "srem":
 		srem := SRemCommand{}
-		srem.Exec(c, params)
+		return srem.Exec(c, params)
 	default:
 		unknow := UnknownCommand{}
-		unknow.Exec(c, params)
+		return unknow.Exec(c, params)
 	}
+}
+
+type CmdParams struct {
+	Params []string
 }
 
 func (c *MemkvClient) ProccessRequest() {
@@ -106,29 +115,56 @@ func (c *MemkvClient) ProccessRequest() {
 		n, err := c.conn.Read(c.qbuf)
 		if err != nil {
 			log.Default().Printf("read from client err: %v", err.Error())
+			c.svr.clis[c.id] = nil
 			return
 		}
 		if n == 0 {
+			c.svr.clis[c.id] = nil
 			log.Default().Printf("client closed connection")
 			return
 		}
 
+		if strings.Contains(string(c.qbuf), "COMMAND") {
+			log.Default().Printf("init cmd")
+			c.conn.Write([]byte("+OK\r\n"))
+			continue
+		}
+
+		parser := NewRESParser(bytes.NewReader(c.qbuf))
+
+		res, _ := parser.Parser()
+
+		cmdParams := &CmdParams{}
+
+		switch v := res.(type) {
+		// client Arrays request
+		case []interface{}:
+			params := res.([]interface{})
+			for _, pm := range params {
+				cmdParams.Params = append(cmdParams.Params, pm.(string))
+			}
+		default:
+			c.conn.Write([]byte(fmt.Sprintf("-ERR protocol paser result type %s\r\n", v)))
+		}
+
+		in, _ := json.Marshal(cmdParams)
+
 		// propose to raft to replicate
-		id, _, isLeader := c.svr.rf.Propose(c.qbuf)
+		id, _, isLeader := c.svr.rf.Propose(in, int64(c.id))
 		if !isLeader {
 			c.conn.Write([]byte("not leader"))
 			continue
 		}
 
 		c.svr.mu.Lock()
-		ch := c.svr.getNotifyChan(id)
+		ch := c.svr.GetNotifyChan(id)
 		c.svr.mu.Unlock()
 
 		select {
 		case res := <-ch:
 			log.Default().Printf("%v", res)
 		case <-time.After(time.Second * 5):
-			c.conn.Write([]byte("execute timeout"))
+			c.conn.Write([]byte("-ERR exec cmd timeout \r\n"))
 		}
 
 		go func() {
