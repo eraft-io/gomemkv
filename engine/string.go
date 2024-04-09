@@ -66,24 +66,24 @@ func (s *GoString) AppendGoString(gs *GoString) *GoString {
 }
 
 func (s *GoString) Range(lo int64, hi int64) *GoString {
-	new_buf := s.buf[lo:hi]
-	return MakeGoStringFromByteSlice(new_buf)
+	newBuf := s.buf[lo:hi]
+	return MakeGoStringFromByteSlice(newBuf)
 }
 
 func (s *GoString) SetRange(offset int64, ss string) {
-	new_buf := s.buf[:offset]
-	new_buf = append(new_buf, []byte(ss)...)
-	s.buf = new_buf
+	newBuf := s.buf[:offset]
+	newBuf = append(newBuf, []byte(ss)...)
+	s.buf = newBuf
 }
 
 func (s *GoString) ToLower() *GoString {
-	lower_str := strings.ToLower(s.ToString())
-	return MakeGoStringFromByteSlice([]byte(lower_str))
+	lowerStr := strings.ToLower(s.ToString())
+	return MakeGoStringFromByteSlice([]byte(lowerStr))
 }
 
 func (s *GoString) ToUpper() *GoString {
-	upper_str := strings.ToUpper(s.ToString())
-	return MakeGoStringFromByteSlice([]byte(upper_str))
+	upperStr := strings.ToUpper(s.ToString())
+	return MakeGoStringFromByteSlice([]byte(upperStr))
 }
 
 func (s *GoString) ToString() string {

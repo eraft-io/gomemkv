@@ -96,9 +96,9 @@ func MakeRaft(peers []*RaftPeerNode, me int64, newdbEng storage_eng.KvStore, app
 	}
 	rf.curTerm, rf.votedFor = rf.logs.ReadRaftState()
 	rf.applyCond = sync.NewCond(&rf.mu)
-	last_log := rf.logs.GetLast()
+	lastLog := rf.logs.GetLast()
 	for _, peer := range peers {
-		rf.matchIdx[peer.id], rf.nextIdx[peer.id] = 0, int(last_log.Index+1)
+		rf.matchIdx[peer.id], rf.nextIdx[peer.id] = 0, int(lastLog.Index+1)
 		if int64(peer.id) != me {
 			rf.replicatorCond[peer.id] = sync.NewCond(&sync.Mutex{})
 			go rf.Replicator(peer)
@@ -181,9 +181,9 @@ func (rf *Raft) HandleRequestVote(req *pb.RequestVoteRequest, resp *pb.RequestVo
 		rf.curTerm, rf.votedFor = req.Term, -1
 	}
 
-	last_log := rf.logs.GetLast()
+	lastLog := rf.logs.GetLast()
 
-	if req.LastLogTerm < int64(last_log.Term) || (req.LastLogTerm == int64(last_log.Term) && req.LastLogIndex < last_log.Index) {
+	if req.LastLogTerm < int64(lastLog.Term) || (req.LastLogTerm == int64(lastLog.Term) && req.LastLogIndex < lastLog.Index) {
 		resp.Term, resp.VoteGranted = rf.curTerm, false
 		return
 	}
@@ -233,16 +233,16 @@ func (rf *Raft) HandleAppendEntries(req *pb.AppendEntriesRequest, resp *pb.Appen
 	if !rf.MatchLog(req.PrevLogTerm, req.PrevLogIndex) {
 		resp.Term = rf.curTerm
 		resp.Success = false
-		last_index := rf.logs.GetLast().Index
-		if last_index < req.PrevLogIndex {
-			logger.ELogger().Sugar().Warnf("log confict with term %d, index %d", -1, last_index+1)
+		lastIndex := rf.logs.GetLast().Index
+		if lastIndex < req.PrevLogIndex {
+			logger.ELogger().Sugar().Warnf("log confict with term %d, index %d", -1, lastIndex+1)
 			resp.ConflictTerm = -1
-			resp.ConflictIndex = last_index + 1
+			resp.ConflictIndex = lastIndex + 1
 		} else {
-			first_index := rf.logs.GetFirst().Index
+			firstIndex := rf.logs.GetFirst().Index
 			resp.ConflictTerm = int64(rf.logs.GetEntry(req.PrevLogIndex).Term)
 			index := req.PrevLogIndex - 1
-			for index >= int64(first_index) && rf.logs.GetEntry(index).Term == uint64(resp.ConflictTerm) {
+			for index >= int64(firstIndex) && rf.logs.GetEntry(index).Term == uint64(resp.ConflictTerm) {
 				index--
 			}
 			resp.ConflictIndex = index
@@ -250,10 +250,10 @@ func (rf *Raft) HandleAppendEntries(req *pb.AppendEntriesRequest, resp *pb.Appen
 		return
 	}
 
-	first_index := rf.logs.GetFirst().Index
+	firstIndex := rf.logs.GetFirst().Index
 	for index, entry := range req.Entries {
-		if int(entry.Index-first_index) >= rf.logs.LogItemCount() || rf.logs.GetEntry(entry.Index).Term != entry.Term {
-			rf.logs.EraseAfter(entry.Index-first_index, true)
+		if int(entry.Index-firstIndex) >= rf.logs.LogItemCount() || rf.logs.GetEntry(entry.Index).Term != entry.Term {
+			rf.logs.EraseAfter(entry.Index-firstIndex, true)
 			for _, newEnt := range req.Entries[index:] {
 				rf.logs.Append(newEnt)
 			}
@@ -328,21 +328,21 @@ func (rf *Raft) advanceCommitIndexForLeader() {
 	// [18 18 '19 19 20] majority replicate log index 19
 	// [18 '18 19] majority replicate log index 18
 	// [18 '18 19 20] majority replicate log index 18
-	new_commit_index := rf.matchIdx[n-(n/2+1)]
-	if new_commit_index > int(rf.commitIdx) {
-		if rf.MatchLog(rf.curTerm, int64(new_commit_index)) {
+	newCommitIndex := rf.matchIdx[n-(n/2+1)]
+	if newCommitIndex > int(rf.commitIdx) {
+		if rf.MatchLog(rf.curTerm, int64(newCommitIndex)) {
 			logger.ELogger().Sugar().Debugf("leader advance commit lid %d index %d at term %d appliedId %d", rf.id, rf.commitIdx, rf.curTerm, rf.lastApplied)
-			rf.commitIdx = int64(new_commit_index)
+			rf.commitIdx = int64(newCommitIndex)
 			rf.applyCond.Signal()
 		}
 	}
 }
 
 func (rf *Raft) advanceCommitIndexForFollower(leaderCommit int) {
-	new_commit_index := Min(leaderCommit, int(rf.logs.GetLast().Index))
-	if new_commit_index > int(rf.commitIdx) {
+	newCommitIndex := Min(leaderCommit, int(rf.logs.GetLast().Index))
+	if newCommitIndex > int(rf.commitIdx) {
 		logger.ELogger().Sugar().Debugf("peer %d advance commit index %d at term %d appliedId %d", rf.id, rf.commitIdx, rf.curTerm, rf.lastApplied)
-		rf.commitIdx = int64(new_commit_index)
+		rf.commitIdx = int64(newCommitIndex)
 		rf.applyCond.Signal()
 	}
 }
@@ -358,7 +358,7 @@ func (rf *Raft) Election() {
 
 	rf.IncrGrantedVotes()
 	rf.votedFor = int64(rf.id)
-	vote_req := &pb.RequestVoteRequest{
+	voteReq := &pb.RequestVoteRequest{
 		Term:         rf.curTerm,
 		CandidateId:  int64(rf.id),
 		LastLogIndex: int64(rf.logs.GetLast().Index),
@@ -370,16 +370,16 @@ func (rf *Raft) Election() {
 			continue
 		}
 		go func(peer *RaftPeerNode) {
-			logger.ELogger().Sugar().Debugf("send request vote to %s %s", peer.addr, vote_req.String())
-			request_vote_resp, err := (*peer.raftServiceCli).RequestVote(context.Background(), vote_req)
+			logger.ELogger().Sugar().Debugf("send request vote to %s %s", peer.addr, voteReq.String())
+			requestVoteResp, err := (*peer.raftServiceCli).RequestVote(context.Background(), voteReq)
 			if err != nil {
 				logger.ELogger().Sugar().Errorf("send request vote to %s failed %v", peer.addr, err.Error())
 			}
 			rf.mu.Lock()
 			defer rf.mu.Unlock()
-			if request_vote_resp != nil && rf.curTerm == vote_req.Term && rf.role == NodeRoleCandidate {
-				logger.ELogger().Sugar().Errorf("send request vote to %s recive -> %s, curterm %d, req term %d", peer.addr, request_vote_resp.String(), rf.curTerm, vote_req.Term)
-				if request_vote_resp.VoteGranted {
+			if requestVoteResp != nil && rf.curTerm == voteReq.Term && rf.role == NodeRoleCandidate {
+				logger.ELogger().Sugar().Errorf("send request vote to %s recive -> %s, curterm %d, req term %d", peer.addr, requestVoteResp.String(), rf.curTerm, voteReq.Term)
+				if requestVoteResp.VoteGranted {
 					// success granted the votes
 					rf.IncrGrantedVotes()
 					if rf.grantedVotes > len(rf.peers)/2 {
@@ -388,10 +388,10 @@ func (rf *Raft) Election() {
 						rf.BroadcastHeartbeat()
 						rf.grantedVotes = 0
 					}
-				} else if request_vote_resp.Term > rf.curTerm {
+				} else if requestVoteResp.Term > rf.curTerm {
 					// request vote reject
 					rf.SwitchRaftNodeRole(NodeRoleFollower)
-					rf.curTerm, rf.votedFor = request_vote_resp.Term, -1
+					rf.curTerm, rf.votedFor = requestVoteResp.Term, -1
 					rf.PersistRaftState()
 				}
 			}
@@ -511,75 +511,73 @@ func (rf *Raft) replicateOneRound(peer *RaftPeerNode) {
 		rf.mu.RUnlock()
 		return
 	}
-	prev_log_index := uint64(rf.nextIdx[peer.id] - 1)
-	logger.ELogger().Sugar().Debugf("leader prev log index %d", prev_log_index)
-	if prev_log_index < uint64(rf.logs.GetFirst().Index) {
-		first_log := rf.logs.GetFirst()
+	prevLogIndex := uint64(rf.nextIdx[peer.id] - 1)
+	logger.ELogger().Sugar().Debugf("leader prev log index %d", prevLogIndex)
+	if prevLogIndex < uint64(rf.logs.GetFirst().Index) {
+		firstLog := rf.logs.GetFirst()
 
-		// TODO: send kv leveldb snapshot
-
-		snap_shot_req := &pb.InstallSnapshotRequest{
+		snapShotReq := &pb.InstallSnapshotRequest{
 			Term:              rf.curTerm,
 			LeaderId:          int64(rf.id),
-			LastIncludedIndex: first_log.Index,
-			LastIncludedTerm:  int64(first_log.Term),
+			LastIncludedIndex: firstLog.Index,
+			LastIncludedTerm:  int64(firstLog.Term),
 		}
 
 		rf.mu.RUnlock()
 
-		logger.ELogger().Sugar().Debugf("send snapshot to %s with %s", peer.addr, snap_shot_req.String())
+		logger.ELogger().Sugar().Debugf("send snapshot to %s with %s", peer.addr, snapShotReq.String())
 
-		snapshot_resp, err := (*peer.raftServiceCli).Snapshot(context.Background(), snap_shot_req)
+		snapshotResp, err := (*peer.raftServiceCli).Snapshot(context.Background(), snapShotReq)
 		if err != nil {
 			logger.ELogger().Sugar().Errorf("send snapshot to %s failed %v", peer.addr, err.Error())
 		}
 
 		rf.mu.Lock()
-		logger.ELogger().Sugar().Debugf("send snapshot to %s with resp %s", peer.addr, snapshot_resp.String())
+		logger.ELogger().Sugar().Debugf("send snapshot to %s with resp %s", peer.addr, snapshotResp.String())
 
-		if snapshot_resp != nil {
-			if rf.role == NodeRoleLeader && rf.curTerm == snap_shot_req.Term {
-				if snapshot_resp.Term > rf.curTerm {
+		if snapshotResp != nil {
+			if rf.role == NodeRoleLeader && rf.curTerm == snapShotReq.Term {
+				if snapshotResp.Term > rf.curTerm {
 					rf.SwitchRaftNodeRole(NodeRoleFollower)
-					rf.curTerm = snapshot_resp.Term
+					rf.curTerm = snapshotResp.Term
 					rf.votedFor = -1
 					rf.PersistRaftState()
 				} else {
-					logger.ELogger().Sugar().Debugf("set peer %d matchIdx %d", peer.id, snap_shot_req.LastIncludedIndex)
-					rf.matchIdx[peer.id] = int(snap_shot_req.LastIncludedIndex)
-					rf.nextIdx[peer.id] = int(snap_shot_req.LastIncludedIndex) + 1
+					logger.ELogger().Sugar().Debugf("set peer %d matchIdx %d", peer.id, snapShotReq.LastIncludedIndex)
+					rf.matchIdx[peer.id] = int(snapShotReq.LastIncludedIndex)
+					rf.nextIdx[peer.id] = int(snapShotReq.LastIncludedIndex) + 1
 				}
 			}
 		}
 		rf.mu.Unlock()
 	} else {
-		first_index := rf.logs.GetFirst().Index
-		logger.ELogger().Sugar().Debugf("first log index %d", first_index)
-		new_ents, _ := rf.logs.EraseBefore(int64(prev_log_index)+1, false)
-		entries := make([]*pb.Entry, len(new_ents))
-		copy(entries, new_ents)
+		firstIndex := rf.logs.GetFirst().Index
+		logger.ELogger().Sugar().Debugf("first log index %d", firstIndex)
+		newEnts, _ := rf.logs.EraseBefore(int64(prevLogIndex)+1, false)
+		entries := make([]*pb.Entry, len(newEnts))
+		copy(entries, newEnts)
 
-		append_ent_req := &pb.AppendEntriesRequest{
+		appendEntReq := &pb.AppendEntriesRequest{
 			Term:         rf.curTerm,
 			LeaderId:     int64(rf.id),
-			PrevLogIndex: int64(prev_log_index),
-			PrevLogTerm:  int64(rf.logs.GetEntry(int64(prev_log_index)).Term),
+			PrevLogIndex: int64(prevLogIndex),
+			PrevLogTerm:  int64(rf.logs.GetEntry(int64(prevLogIndex)).Term),
 			Entries:      entries,
 			LeaderCommit: rf.commitIdx,
 		}
 		rf.mu.RUnlock()
 
 		// send empty ae to peers
-		resp, err := (*peer.raftServiceCli).AppendEntries(context.Background(), append_ent_req)
+		resp, err := (*peer.raftServiceCli).AppendEntries(context.Background(), appendEntReq)
 		if err != nil {
 			logger.ELogger().Sugar().Errorf("send append entries to %s failed %v\n", peer.addr, err.Error())
 		}
-		if rf.role == NodeRoleLeader && rf.curTerm == append_ent_req.Term {
+		if rf.role == NodeRoleLeader && rf.curTerm == appendEntReq.Term {
 			if resp != nil {
 				// deal with appendRnt resp
 				if resp.Success {
 					logger.ELogger().Sugar().Debugf("send heart beat to %s success", peer.addr)
-					rf.matchIdx[peer.id] = int(append_ent_req.PrevLogIndex) + len(append_ent_req.Entries)
+					rf.matchIdx[peer.id] = int(appendEntReq.PrevLogIndex) + len(appendEntReq.Entries)
 					rf.nextIdx[peer.id] = rf.matchIdx[peer.id] + 1
 					rf.advanceCommitIndexForLeader()
 				} else {
@@ -592,7 +590,7 @@ func (rf *Raft) replicateOneRound(peer *RaftPeerNode) {
 					} else if resp.Term == rf.curTerm {
 						rf.nextIdx[peer.id] = int(resp.ConflictIndex)
 						if resp.ConflictTerm != -1 {
-							for i := append_ent_req.PrevLogIndex; i >= int64(first_index); i-- {
+							for i := appendEntReq.PrevLogIndex; i >= int64(prevLogIndex); i-- {
 								if rf.logs.GetEntry(i).Term == uint64(resp.ConflictTerm) {
 									rf.nextIdx[peer.id] = int(i + 1)
 									break
@@ -616,10 +614,10 @@ func (rf *Raft) Applier() {
 			rf.applyCond.Wait()
 		}
 
-		commit_index, last_applied := rf.commitIdx, rf.lastApplied
-		entries := make([]*pb.Entry, commit_index-last_applied)
-		copy(entries, rf.logs.GetRange(last_applied+1, commit_index))
-		logger.ELogger().Sugar().Debugf("%d, applies entries %d-%d in term %d", rf.id, rf.lastApplied, commit_index, rf.curTerm)
+		commitIndex, lastApplied := rf.commitIdx, rf.lastApplied
+		entries := make([]*pb.Entry, commitIndex-lastApplied)
+		copy(entries, rf.logs.GetRange(lastApplied+1, commitIndex))
+		logger.ELogger().Sugar().Debugf("%d, applies entries %d-%d in term %d", rf.id, rf.lastApplied, commitIndex, rf.curTerm)
 
 		rf.mu.Unlock()
 		for _, entry := range entries {
@@ -633,7 +631,7 @@ func (rf *Raft) Applier() {
 		}
 
 		rf.mu.Lock()
-		rf.lastApplied = int64(Max(int(rf.lastApplied), int(commit_index)))
+		rf.lastApplied = int64(Max(int(rf.lastApplied), int(commitIndex)))
 		rf.mu.Unlock()
 	}
 }

@@ -319,3 +319,62 @@ func (srem *SRemCommand) Exec(c *MemkvClient, params []string) ([]byte, error) {
 	set.(*engine.SkipListSet).Rem(params[2])
 	return []byte(fmt.Sprintf(":%d\r\n", 1)), nil
 }
+
+type HSetCommand struct{}
+
+func (hset *HSetCommand) Exec(c *MemkvClient, params []string) ([]byte, error) {
+	key := params[1]
+
+	hash := engine.MakeSkipListHash()
+
+	count := 0
+	for i := 2; i < len(params); i += 2 {
+		hash.Insert(params[i], params[i+1])
+		count++
+	}
+
+	c.db.Insert(key, hash)
+
+	return []byte(fmt.Sprintf(":%d\r\n", count)), nil
+}
+
+type HGetCommand struct{}
+
+func (hget *HGetCommand) Exec(c *MemkvClient, params []string) ([]byte, error) {
+	key := params[1]
+
+	hashVal := c.db.Search(key)
+
+	val := hashVal.(*engine.SkipListHash).Search(params[2])
+
+	if val == nil {
+		return []byte("$-1\r\n"), nil
+	}
+
+	return []byte(fmt.Sprintf("+%s\r\n", val.(string))), nil
+}
+
+type HGetAllCommand struct{}
+
+func (hgetall *HGetAllCommand) Exec(c *MemkvClient, params []string) ([]byte, error) {
+	key := params[1]
+
+	hashVal := c.db.Search(key)
+	keys, vals := hashVal.(*engine.SkipListHash).IterAllNodes()
+	replyBuf := "*" + strconv.Itoa(len(keys)*2) + "\r\n"
+
+	for i := 0; i < len(keys); i++ {
+		replyBuf += "$"
+		replyBuf += strconv.Itoa(len(keys[i].(string)))
+		replyBuf += "\r\n"
+		replyBuf += keys[i].(string)
+		replyBuf += "\r\n"
+		replyBuf += "$"
+		replyBuf += strconv.Itoa(len(vals[i].(string)))
+		replyBuf += "\r\n"
+		replyBuf += vals[i].(string)
+		replyBuf += "\r\n"
+	}
+
+	return []byte(replyBuf), nil
+}

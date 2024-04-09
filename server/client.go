@@ -99,6 +99,15 @@ func (c *MemkvClient) ExecCmd(params []string) ([]byte, error) {
 	case "srem":
 		srem := SRemCommand{}
 		return srem.Exec(c, params)
+	case "hset":
+		hset := HSetCommand{}
+		return hset.Exec(c, params)
+	case "hget":
+		hget := HGetCommand{}
+		return hget.Exec(c, params)
+	case "hgetall":
+		hgetall := HGetAllCommand{}
+		return hgetall.Exec(c, params)
 	default:
 		unknow := UnknownCommand{}
 		return unknow.Exec(c, params)
@@ -152,7 +161,7 @@ func (c *MemkvClient) ProccessRequest() {
 		// propose to raft to replicate
 		id, _, isLeader := c.svr.rf.Propose(in, int64(c.id))
 		if !isLeader {
-			c.conn.Write([]byte("not leader"))
+			c.conn.Write([]byte("-ERR not leader \r\n"))
 			continue
 		}
 

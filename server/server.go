@@ -134,8 +134,10 @@ func (s *MemKvServer) AppliedAndExecCmd(done <-chan interface{}) {
 				s.lastAppliedId = int(appliedMsg.CommandIndex)
 
 				if s.rf.IsLeader() {
-					reply_buf, _ := s.clis[int(appliedMsg.Clientid)].ExecCmd(cmdParams.Params)
-					s.clis[int(appliedMsg.Clientid)].conn.Write(reply_buf)
+					if len(cmdParams.Params) > 0 {
+						replyBuf, _ := s.clis[int(appliedMsg.Clientid)].ExecCmd(cmdParams.Params)
+						s.clis[int(appliedMsg.Clientid)].conn.Write(replyBuf)
+					}
 				} else {
 					// mock client
 					newCli := MakeMemkvClient(nil, s, 99999)
@@ -143,7 +145,6 @@ func (s *MemKvServer) AppliedAndExecCmd(done <-chan interface{}) {
 				}
 
 				cmdResp := &pb.CommandResponse{}
-				cmdResp.Value = "OK"
 				ch := s.GetNotifyChan(int(appliedMsg.CommandIndex))
 				ch <- cmdResp
 

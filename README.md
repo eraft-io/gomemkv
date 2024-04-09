@@ -4,7 +4,7 @@ A Distributed memory kv service
 ## Supported command list
 
 
-command | Time complexity| 
+Command | Time Complexity|
 --- | --- | 
 set | O(1) | 
 get | O(1) | 
@@ -23,6 +23,9 @@ smemebers | O(N) |
 scard | O(1) | 
 srandmember | O(1) | 
 srem | O(N) | 
+hset | O(1) |
+hget | O(1) |
+hgetall | O(n) |
 
 ## run demo
 
