@@ -24,6 +24,7 @@ import (
 	"sync/atomic"
 
 	"github.com/eraft-io/gomemkv/engine"
+	"github.com/eraft-io/gomemkv/logger"
 	pb "github.com/eraft-io/gomemkv/raftpb"
 	"github.com/eraft-io/gomemkv/replication"
 	"github.com/eraft-io/gomemkv/storage"
@@ -123,13 +124,11 @@ func (s *MemKvServer) AppliedAndExecCmd(done <-chan interface{}) {
 			if appliedMsg.CommandValid {
 				s.mu.Lock()
 
-				if appliedMsg.CommandIndex <= int64(s.lastAppliedId) {
-					s.mu.Unlock()
+				cmdParams := &CmdParams{}
+				if err := json.Unmarshal(appliedMsg.Command, &cmdParams); err != nil {
+					logger.ELogger().Sugar().Errorf(err.Error())
 					continue
 				}
-
-				cmdParams := &CmdParams{}
-				json.Unmarshal(appliedMsg.Command, &cmdParams)
 
 				s.lastAppliedId = int(appliedMsg.CommandIndex)
 

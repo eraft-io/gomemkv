@@ -33,8 +33,9 @@ type RaftLog struct {
 }
 
 type RaftPersistenState struct {
-	CurTerm  int64
-	VotedFor int64
+	CurTerm   int64
+	VotedFor  int64
+	AppliedId int64
 }
 
 // MakePersistRaftLog make a persist raft log model
@@ -65,25 +66,26 @@ func MakePersistRaftLog(newdbEng storage_eng.KvStore) *RaftLog {
 // PersistRaftState Persistent storage raft state
 // (curTerm, and votedFor)
 // you can find this design in raft paper figure2 State definition
-func (rfLog *RaftLog) PersistRaftState(curTerm int64, votedFor int64) {
+func (rfLog *RaftLog) PersistRaftState(curTerm int64, votedFor int64, appliedId int64) {
 	rfLog.mu.Lock()
 	defer rfLog.mu.Unlock()
 	rf_state := &RaftPersistenState{
-		CurTerm:  curTerm,
-		VotedFor: votedFor,
+		CurTerm:   curTerm,
+		VotedFor:  votedFor,
+		AppliedId: appliedId,
 	}
 	rfLog.dbEng.PutBytesKv(RAFT_STATE_KEY, EncodeRaftState(rf_state))
 }
 
 // ReadRaftState
 // read the persist curTerm, votedFor for node from storage engine
-func (rfLog *RaftLog) ReadRaftState() (curTerm int64, votedFor int64) {
+func (rfLog *RaftLog) ReadRaftState() (curTerm int64, votedFor int64, appliedId int64) {
 	rfBytes, err := rfLog.dbEng.GetBytesValue(RAFT_STATE_KEY)
 	if err != nil {
-		return 0, -1
+		return 0, -1, 0
 	}
 	rfState := DecodeRaftState(rfBytes)
-	return rfState.CurTerm, rfState.VotedFor
+	return rfState.CurTerm, rfState.VotedFor, rfState.AppliedId
 }
 
 // GetFirstLogId
@@ -97,26 +99,6 @@ func (rfLog *RaftLog) GetFirstLogId() uint64 {
 // get the last log id from storage engine
 func (rfLog *RaftLog) GetLastLogId() uint64 {
 	return rfLog.lastIdx
-}
-
-//
-// SetEntFirstData
-//
-
-func (rfLog *RaftLog) SetEntFirstData(d []byte) error {
-	rfLog.mu.Lock()
-	defer rfLog.mu.Unlock()
-	firstIdx := rfLog.GetFirstLogId()
-	encodeValue, err := rfLog.dbEng.GetBytesValue(EncodeRaftLogKey(uint64(firstIdx)))
-	if err != nil {
-		logger.ELogger().Sugar().Panicf("get log entry with id %d error!", firstIdx)
-		panic(err)
-	}
-	ent := DecodeEntry(encodeValue)
-	ent.Index = int64(firstIdx)
-	ent.Data = d
-	newent_encode := EncodeEntry(ent)
-	return rfLog.dbEng.PutBytesKv(EncodeRaftLogKey(firstIdx), newent_encode)
 }
 
 func (rfLog *RaftLog) ResetFirstLogEntry(term int64, index int64) error {

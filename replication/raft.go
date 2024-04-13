@@ -94,7 +94,7 @@ func MakeRaft(peers []*RaftPeerNode, me int64, newdbEng storage_eng.KvStore, app
 		baseElecTimeout:  baseElectionTimeOutMs,
 		heartBeatTimeout: heartbeatTimeOutMs,
 	}
-	rf.curTerm, rf.votedFor = rf.logs.ReadRaftState()
+	rf.curTerm, rf.votedFor, rf.lastApplied = rf.logs.ReadRaftState()
 	rf.applyCond = sync.NewCond(&rf.mu)
 	lastLog := rf.logs.GetLast()
 	for _, peer := range peers {
@@ -113,7 +113,7 @@ func MakeRaft(peers []*RaftPeerNode, me int64, newdbEng storage_eng.KvStore, app
 }
 
 func (rf *Raft) PersistRaftState() {
-	rf.logs.PersistRaftState(rf.curTerm, rf.votedFor)
+	rf.logs.PersistRaftState(rf.curTerm, rf.votedFor, rf.lastApplied)
 }
 
 func (rf *Raft) Kill() {
@@ -632,6 +632,7 @@ func (rf *Raft) Applier() {
 
 		rf.mu.Lock()
 		rf.lastApplied = int64(Max(int(rf.lastApplied), int(commitIndex)))
+		rf.PersistRaftState()
 		rf.mu.Unlock()
 	}
 }

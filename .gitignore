@@ -21,3 +21,4 @@
 go.work
 output/
 vendor/
+.DS_Store
