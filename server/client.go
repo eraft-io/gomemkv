@@ -123,7 +123,7 @@ func (c *MemkvClient) ProccessRequest() {
 	for {
 		n, err := c.conn.Read(c.qbuf)
 		if err != nil {
-			log.Default().Printf("read from client err: %v", err.Error())
+			log.Default().Printf("client %d closed connection with err: %v", c.id, err.Error())
 			c.svr.clis[c.id] = nil
 			return
 		}
@@ -170,8 +170,8 @@ func (c *MemkvClient) ProccessRequest() {
 		c.svr.mu.Unlock()
 
 		select {
-		case res := <-ch:
-			log.Default().Printf("%v", res)
+		case _ = <-ch:
+			// log.Default().Printf("%v", res)
 		case <-time.After(time.Second * 5):
 			c.conn.Write([]byte("-ERR exec cmd timeout \r\n"))
 		}

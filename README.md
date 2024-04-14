@@ -3,7 +3,6 @@ A Distributed memory kv service
 
 ## Supported command list
 
-
 Command | Time Complexity|
 --- | --- | 
 set | O(1) | 

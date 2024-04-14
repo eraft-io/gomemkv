@@ -244,19 +244,26 @@ type SAddCommand struct {
 func (sadd *SAddCommand) Exec(c *MemkvClient, params []string) ([]byte, error) {
 	key := params[1]
 	val := c.db.Search(key)
+	affectRows := 0
 	if val != nil {
 		oldSet := val.(*engine.SkipListSet)
-		if oldSet.IsMember(params[2]) {
-			return []byte(fmt.Sprintf(":%d\r\n", 0)), nil
+		for i := 2; i < len(params); i++ {
+			if oldSet.IsMember(params[i]) {
+				continue
+			}
+			affectRows++
+			oldSet.Add(params[i])
 		}
-		oldSet.Add(params[2])
 		c.db.Insert(key, oldSet)
-		return []byte(fmt.Sprintf(":%d\r\n", 1)), nil
+		return []byte(fmt.Sprintf(":%d\r\n", affectRows)), nil
 	} else {
 		setVal := engine.MakeSkipListSet()
-		setVal.Add(params[2])
+		for i := 2; i < len(params); i++ {
+			setVal.Add(params[i])
+			affectRows++
+		}
 		c.db.Insert(key, setVal)
-		return []byte(fmt.Sprintf(":%d\r\n", 1)), nil
+		return []byte(fmt.Sprintf(":%d\r\n", affectRows)), nil
 	}
 }
 

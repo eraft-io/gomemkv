@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	pb "github.com/eraft-io/gomemkv/raftpb"
+	"github.com/stretchr/testify/assert"
 
 	storage_eng "github.com/eraft-io/gomemkv/storage"
 )
@@ -32,14 +33,14 @@ func RemoveDir(in string) {
 	}
 }
 
-func TestTestPersisLogGetInit(t *testing.T) {
+func TestPersisLogGetInit(t *testing.T) {
 	newdbEng := storage_eng.EngineFactory("leveldb", "./log_data_test")
 	raftLog := MakePersistRaftLog(newdbEng)
 	fristEnt := raftLog.GetFirst()
-	t.Logf("first log %s", fristEnt.String())
+	assert.Equal(t, fristEnt.Index, int64(0))
 	lastEnt := raftLog.GetLast()
-	t.Logf("last log %s", lastEnt.String())
-	t.Logf("log items count %d", raftLog.LogItemCount())
+	assert.Equal(t, lastEnt.Index, int64(0))
+	assert.Equal(t, 1, raftLog.LogItemCount())
 	RemoveDir("./log_data_test")
 }
 
@@ -204,22 +205,22 @@ func TestPersisLogGetRange(t *testing.T) {
 	raftLog.Append(&pb.Entry{
 		Index: 1,
 		Term:  1,
-		Data:  []byte{0x01, 0x02},
+		Data:  []byte{0x01, 0x01},
 	})
 	raftLog.Append(&pb.Entry{
 		Index: 2,
 		Term:  1,
-		Data:  []byte{0x01, 0x02},
+		Data:  []byte{0x02, 0x01},
 	})
 	raftLog.Append(&pb.Entry{
 		Index: 3,
 		Term:  1,
-		Data:  []byte{0x01, 0x02},
+		Data:  []byte{0x03, 0x01},
 	})
 	raftLog.Append(&pb.Entry{
 		Index: 4,
 		Term:  1,
-		Data:  []byte{0x01, 0x02},
+		Data:  []byte{0x04, 0x01},
 	})
 
 	ents := raftLog.GetRange(2, 3)
@@ -253,7 +254,7 @@ func TestPersisLogGetRangeAfterGc(t *testing.T) {
 		Data:  []byte{0x01, 0x02},
 	})
 	raftLog.EraseBefore(2, true)
-	ents := raftLog.GetRange(1, 2)
+	ents := raftLog.GetRange(2, 3)
 	for _, ent := range ents {
 		t.Logf("got ent %s", ent.String())
 	}

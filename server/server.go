@@ -19,7 +19,6 @@ import (
 	"encoding/json"
 	"log"
 	"net"
-	"strconv"
 	"sync"
 	"sync/atomic"
 
@@ -27,7 +26,6 @@ import (
 	"github.com/eraft-io/gomemkv/logger"
 	pb "github.com/eraft-io/gomemkv/raftpb"
 	"github.com/eraft-io/gomemkv/replication"
-	"github.com/eraft-io/gomemkv/storage"
 )
 
 // for demo test
@@ -65,9 +63,9 @@ func MakeDefaultMemKvServer(nodeId int) *MemKvServer {
 		peerEnds = append(peerEnds, newEnd)
 	}
 	newApplyCh := make(chan *pb.ApplyMsg)
-	logdb_eng := storage.EngineFactory("leveldb", "./data/log_"+strconv.Itoa(nodeId))
 
-	newRf := replication.MakeRaft(peerEnds, int64(nodeId), logdb_eng, newApplyCh, 2000, 6000)
+	// logdb_eng := storage.EngineFactory("leveldb", "./data/log_"+strconv.Itoa(nodeId))
+	newRf := replication.MakeRaft(peerEnds, int64(nodeId), nil, newApplyCh, 2000, 6000)
 	kvSvr := &MemKvServer{
 		rf:            newRf,
 		port:          DefaultPeerClientsMap[nodeId],

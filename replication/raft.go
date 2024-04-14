@@ -61,7 +61,7 @@ type Raft struct {
 	curTerm          int64
 	votedFor         int64
 	grantedVotes     int
-	logs             *RaftLog
+	logs             IRaftLog
 	commitIdx        int64
 	lastApplied      int64
 	nextIdx          []int
@@ -86,7 +86,7 @@ func MakeRaft(peers []*RaftPeerNode, me int64, newdbEng storage_eng.KvStore, app
 		votedFor:         VOTE_FOR_NO_ONE,
 		grantedVotes:     0,
 		isSnapshoting:    false,
-		logs:             MakePersistRaftLog(newdbEng),
+		logs:             MakeMemLog(),
 		nextIdx:          make([]int, len(peers)),
 		matchIdx:         make([]int, len(peers)),
 		heartbeatTimer:   time.NewTimer(time.Millisecond * time.Duration(heartbeatTimeOutMs)),
@@ -133,7 +133,7 @@ func (rf *Raft) SwitchRaftNodeRole(role NodeRole) {
 		return
 	}
 	rf.role = role
-	logger.ELogger().Sugar().Debugf("node change role to -> %s \n", NodeToString(role))
+	logger.ELogger().Sugar().Infof("node change role to -> %s \n", NodeToString(role))
 	switch role {
 	case NodeRoleFollower:
 		rf.heartbeatTimer.Stop()
@@ -331,7 +331,7 @@ func (rf *Raft) advanceCommitIndexForLeader() {
 	newCommitIndex := rf.matchIdx[n-(n/2+1)]
 	if newCommitIndex > int(rf.commitIdx) {
 		if rf.MatchLog(rf.curTerm, int64(newCommitIndex)) {
-			logger.ELogger().Sugar().Debugf("leader advance commit lid %d index %d at term %d appliedId %d", rf.id, rf.commitIdx, rf.curTerm, rf.lastApplied)
+			// logger.ELogger().Sugar().Debugf("leader advance commit lid %d index %d at term %d appliedId %d", rf.id, rf.commitIdx, rf.curTerm, rf.lastApplied)
 			rf.commitIdx = int64(newCommitIndex)
 			rf.applyCond.Signal()
 		}
@@ -341,7 +341,7 @@ func (rf *Raft) advanceCommitIndexForLeader() {
 func (rf *Raft) advanceCommitIndexForFollower(leaderCommit int) {
 	newCommitIndex := Min(leaderCommit, int(rf.logs.GetLast().Index))
 	if newCommitIndex > int(rf.commitIdx) {
-		logger.ELogger().Sugar().Debugf("peer %d advance commit index %d at term %d appliedId %d", rf.id, rf.commitIdx, rf.curTerm, rf.lastApplied)
+		// logger.ELogger().Sugar().Debugf("peer %d advance commit index %d at term %d appliedId %d", rf.id, rf.commitIdx, rf.curTerm, rf.lastApplied)
 		rf.commitIdx = int64(newCommitIndex)
 		rf.applyCond.Signal()
 	}
@@ -418,7 +418,7 @@ func (rf *Raft) BroadcastHeartbeat() {
 		if int64(peer.id) == rf.id {
 			continue
 		}
-		logger.ELogger().Sugar().Debugf("send heart beat to %s", peer.addr)
+		// logger.ELogger().Sugar().Debugf("send heart beat to %s", peer.addr)
 		go func(peer *RaftPeerNode) {
 			rf.replicateOneRound(peer)
 		}(peer)
@@ -496,7 +496,7 @@ func (rf *Raft) Replicator(peer *RaftPeerNode) {
 	rf.replicatorCond[peer.id].L.Lock()
 	defer rf.replicatorCond[peer.id].L.Unlock()
 	for !rf.IsKilled() {
-		logger.ELogger().Sugar().Debug("peer id wait for replicating...")
+		// logger.ELogger().Sugar().Debug("peer id wait for replicating...")
 		for !(rf.role == NodeRoleLeader && rf.matchIdx[peer.id] < int(rf.logs.GetLast().Index)) {
 			rf.replicatorCond[peer.id].Wait()
 		}
@@ -512,7 +512,7 @@ func (rf *Raft) replicateOneRound(peer *RaftPeerNode) {
 		return
 	}
 	prevLogIndex := uint64(rf.nextIdx[peer.id] - 1)
-	logger.ELogger().Sugar().Debugf("leader prev log index %d", prevLogIndex)
+	// logger.ELogger().Sugar().Debugf("leader prev log index %d", prevLogIndex)
 	if prevLogIndex < uint64(rf.logs.GetFirst().Index) {
 		firstLog := rf.logs.GetFirst()
 
@@ -551,8 +551,8 @@ func (rf *Raft) replicateOneRound(peer *RaftPeerNode) {
 		}
 		rf.mu.Unlock()
 	} else {
-		firstIndex := rf.logs.GetFirst().Index
-		logger.ELogger().Sugar().Debugf("first log index %d", firstIndex)
+		// firstIndex := rf.logs.GetFirst().Index
+		// logger.ELogger().Sugar().Debugf("first log index %d", firstIndex)
 		newEnts, _ := rf.logs.EraseBefore(int64(prevLogIndex)+1, false)
 		entries := make([]*pb.Entry, len(newEnts))
 		copy(entries, newEnts)
@@ -576,7 +576,7 @@ func (rf *Raft) replicateOneRound(peer *RaftPeerNode) {
 			if resp != nil {
 				// deal with appendRnt resp
 				if resp.Success {
-					logger.ELogger().Sugar().Debugf("send heart beat to %s success", peer.addr)
+					// logger.ELogger().Sugar().Debugf("send heart beat to %s success", peer.addr)
 					rf.matchIdx[peer.id] = int(appendEntReq.PrevLogIndex) + len(appendEntReq.Entries)
 					rf.nextIdx[peer.id] = rf.matchIdx[peer.id] + 1
 					rf.advanceCommitIndexForLeader()
@@ -610,14 +610,14 @@ func (rf *Raft) Applier() {
 	for !rf.IsKilled() {
 		rf.mu.Lock()
 		for rf.lastApplied >= rf.commitIdx {
-			logger.ELogger().Sugar().Debug("applier ...")
+			// logger.ELogger().Sugar().Debug("applier ...")
 			rf.applyCond.Wait()
 		}
 
 		commitIndex, lastApplied := rf.commitIdx, rf.lastApplied
 		entries := make([]*pb.Entry, commitIndex-lastApplied)
 		copy(entries, rf.logs.GetRange(lastApplied+1, commitIndex))
-		logger.ELogger().Sugar().Debugf("%d, applies entries %d-%d in term %d", rf.id, rf.lastApplied, commitIndex, rf.curTerm)
+		// logger.ELogger().Sugar().Debugf("%d, applies entries %d-%d in term %d", rf.id, rf.lastApplied, commitIndex, rf.curTerm)
 
 		rf.mu.Unlock()
 		for _, entry := range entries {

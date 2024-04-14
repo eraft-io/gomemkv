@@ -16,16 +16,18 @@ package replication
 
 const (
 	VOTE_FOR_NO_ONE = -1
+
+	INIT_LOG_INDEX = 0
 )
 
-var RAFTLOG_PREFIX = []byte{0x02, 0x00, 0x00, 0x24}
+var (
+	RAFTLOG_PREFIX = []byte{0x02, 0x00, 0x00, 0x24}
 
-var FIRST_IDX_KEY = []byte{0x88, 0x88}
+	FIRST_IDX_KEY = []byte{0x88, 0x88}
 
-var LAST_IDX_KEY = []byte{0x99, 0x99}
+	LAST_IDX_KEY = []byte{0x99, 0x99}
 
-var RAFT_STATE_KEY = []byte{0x19, 0x49}
+	RAFT_STATE_KEY = []byte{0x19, 0x49}
 
-const INIT_LOG_INDEX = 0
-
-var SNAPSHOT_STATE_KEY = []byte{0x19, 0x97}
+	SNAPSHOT_STATE_KEY = []byte{0x19, 0x97}
+)

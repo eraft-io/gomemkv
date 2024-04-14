@@ -14,5 +14,21 @@
 
 package replication
 
+import pb "github.com/eraft-io/gomemkv/raftpb"
+
 type IRaftLog interface {
+	GetFirstLogId() uint64
+	GetLastLogId() uint64
+	ResetFirstLogEntry(term int64, index int64) error
+	ReInitLogs() error
+	GetFirst() *pb.Entry
+	GetLast() *pb.Entry
+	LogItemCount() int
+	Append(newEnt *pb.Entry)
+	EraseBefore(logidx int64, withDel bool) ([]*pb.Entry, error)
+	EraseAfter(logidx int64, withDel bool) []*pb.Entry
+	GetRange(lo, hi int64) []*pb.Entry
+	GetEntry(idx int64) *pb.Entry
+	PersistRaftState(curTerm int64, votedFor int64, appliedId int64)
+	ReadRaftState() (curTerm int64, votedFor int64, appliedId int64)
 }

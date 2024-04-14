@@ -25,7 +25,7 @@ import (
 	storage_eng "github.com/eraft-io/gomemkv/storage"
 )
 
-type RaftLog struct {
+type PersisRaftLog struct {
 	mu       sync.RWMutex
 	firstIdx uint64
 	lastIdx  uint64
@@ -41,14 +41,14 @@ type RaftPersistenState struct {
 // MakePersistRaftLog make a persist raft log model
 //
 // newdbEng: a LevelDBKvStore storage engine
-func MakePersistRaftLog(newdbEng storage_eng.KvStore) *RaftLog {
+func MakePersistRaftLog(newdbEng storage_eng.KvStore) *PersisRaftLog {
 	_, err := newdbEng.GetBytesValue(EncodeRaftLogKey(INIT_LOG_INDEX))
 	if err != nil {
 		logger.ELogger().Sugar().Debugf("init raft log state")
 		emp_ent := &pb.Entry{}
 		emp_ent_encode := EncodeEntry(emp_ent)
 		newdbEng.PutBytesKv(EncodeRaftLogKey(INIT_LOG_INDEX), emp_ent_encode)
-		return &RaftLog{dbEng: newdbEng}
+		return &PersisRaftLog{dbEng: newdbEng}
 	}
 	lidkBytes, _, err := newdbEng.SeekPrefixLast(RAFTLOG_PREFIX)
 	if err != nil {
@@ -60,13 +60,13 @@ func MakePersistRaftLog(newdbEng storage_eng.KvStore) *RaftLog {
 		panic(err)
 	}
 	firstIdx := binary.BigEndian.Uint64(fidkBytes[len(RAFTLOG_PREFIX):])
-	return &RaftLog{dbEng: newdbEng, lastIdx: lastIdx, firstIdx: firstIdx}
+	return &PersisRaftLog{dbEng: newdbEng, lastIdx: lastIdx, firstIdx: firstIdx}
 }
 
 // PersistRaftState Persistent storage raft state
 // (curTerm, and votedFor)
 // you can find this design in raft paper figure2 State definition
-func (rfLog *RaftLog) PersistRaftState(curTerm int64, votedFor int64, appliedId int64) {
+func (rfLog *PersisRaftLog) PersistRaftState(curTerm int64, votedFor int64, appliedId int64) {
 	rfLog.mu.Lock()
 	defer rfLog.mu.Unlock()
 	rf_state := &RaftPersistenState{
@@ -79,7 +79,7 @@ func (rfLog *RaftLog) PersistRaftState(curTerm int64, votedFor int64, appliedId 
 
 // ReadRaftState
 // read the persist curTerm, votedFor for node from storage engine
-func (rfLog *RaftLog) ReadRaftState() (curTerm int64, votedFor int64, appliedId int64) {
+func (rfLog *PersisRaftLog) ReadRaftState() (curTerm int64, votedFor int64, appliedId int64) {
 	rfBytes, err := rfLog.dbEng.GetBytesValue(RAFT_STATE_KEY)
 	if err != nil {
 		return 0, -1, 0
@@ -90,18 +90,18 @@ func (rfLog *RaftLog) ReadRaftState() (curTerm int64, votedFor int64, appliedId 
 
 // GetFirstLogId
 // get the first log id from storage engine
-func (rfLog *RaftLog) GetFirstLogId() uint64 {
+func (rfLog *PersisRaftLog) GetFirstLogId() uint64 {
 	return rfLog.firstIdx
 }
 
 // GetLastLogId
 //
 // get the last log id from storage engine
-func (rfLog *RaftLog) GetLastLogId() uint64 {
+func (rfLog *PersisRaftLog) GetLastLogId() uint64 {
 	return rfLog.lastIdx
 }
 
-func (rfLog *RaftLog) ResetFirstLogEntry(term int64, index int64) error {
+func (rfLog *PersisRaftLog) ResetFirstLogEntry(term int64, index int64) error {
 	rfLog.mu.Lock()
 	defer rfLog.mu.Unlock()
 	newEnt := &pb.Entry{}
@@ -118,7 +118,7 @@ func (rfLog *RaftLog) ResetFirstLogEntry(term int64, index int64) error {
 
 // ReInitLogs
 // make logs to init state
-func (rfLog *RaftLog) ReInitLogs() error {
+func (rfLog *PersisRaftLog) ReInitLogs() error {
 	rfLog.mu.Lock()
 	defer rfLog.mu.Unlock()
 	// delete all log
@@ -126,7 +126,7 @@ func (rfLog *RaftLog) ReInitLogs() error {
 		return err
 	}
 	rfLog.firstIdx = 0
-	rfLog.lastIdx = 0
+	rfLog.lastIdx = 1
 	// add a empty
 	empEnt := &pb.Entry{}
 	empentEncode := EncodeEntry(empEnt)
@@ -136,25 +136,25 @@ func (rfLog *RaftLog) ReInitLogs() error {
 // GetFirst
 //
 // get the first entry from storage engine
-func (rfLog *RaftLog) GetFirst() *pb.Entry {
+func (rfLog *PersisRaftLog) GetFirst() *pb.Entry {
 	rfLog.mu.RLock()
 	defer rfLog.mu.RUnlock()
-	return rfLog.GetEnt(int64(rfLog.firstIdx))
+	return rfLog.getEnt(int64(rfLog.firstIdx))
 }
 
 // GetLast
 //
 // get the last entry from storage engine
-func (rfLog *RaftLog) GetLast() *pb.Entry {
+func (rfLog *PersisRaftLog) GetLast() *pb.Entry {
 	rfLog.mu.RLock()
 	defer rfLog.mu.RUnlock()
-	return rfLog.GetEnt(int64(rfLog.lastIdx))
+	return rfLog.getEnt(int64(rfLog.lastIdx))
 }
 
 // LogItemCount
 //
 // get total log count from storage engine
-func (rfLog *RaftLog) LogItemCount() int {
+func (rfLog *PersisRaftLog) LogItemCount() int {
 	rfLog.mu.RLock()
 	defer rfLog.mu.RUnlock()
 	return int(rfLog.lastIdx) - int(rfLog.firstIdx) + 1
@@ -163,7 +163,7 @@ func (rfLog *RaftLog) LogItemCount() int {
 // Append
 //
 // append a new entry to raftlog, put it to storage engine
-func (rfLog *RaftLog) Append(newEnt *pb.Entry) {
+func (rfLog *PersisRaftLog) Append(newEnt *pb.Entry) {
 	rfLog.mu.Lock()
 	defer rfLog.mu.Unlock()
 	newentEncode := EncodeEntry(newEnt)
@@ -174,7 +174,7 @@ func (rfLog *RaftLog) Append(newEnt *pb.Entry) {
 // EraseBefore
 // erase log before from idx, and copy [idx:] log return
 // this operation don't modity log in storage engine
-func (rfLog *RaftLog) EraseBefore(logidx int64, withDel bool) ([]*pb.Entry, error) {
+func (rfLog *PersisRaftLog) EraseBefore(logidx int64, withDel bool) ([]*pb.Entry, error) {
 	rfLog.mu.Lock()
 	defer rfLog.mu.Unlock()
 	ents := []*pb.Entry{}
@@ -190,7 +190,7 @@ func (rfLog *RaftLog) EraseBefore(logidx int64, withDel bool) ([]*pb.Entry, erro
 		rfLog.firstIdx = uint64(logidx)
 	}
 	for i := logidx; i <= int64(lastlogId); i++ {
-		ents = append(ents, rfLog.GetEnt(i))
+		ents = append(ents, rfLog.getEnt(i))
 	}
 	return ents, nil
 }
@@ -198,7 +198,7 @@ func (rfLog *RaftLog) EraseBefore(logidx int64, withDel bool) ([]*pb.Entry, erro
 // EraseAfter
 // erase after idx, !!!WRANNING!!! is withDel is true, this operation will delete log key
 // in storage engine
-func (rfLog *RaftLog) EraseAfter(logidx int64, withDel bool) []*pb.Entry {
+func (rfLog *PersisRaftLog) EraseAfter(logidx int64, withDel bool) []*pb.Entry {
 	rfLog.mu.Lock()
 	defer rfLog.mu.Unlock()
 	firstlogId := rfLog.GetFirstLogId()
@@ -212,7 +212,7 @@ func (rfLog *RaftLog) EraseAfter(logidx int64, withDel bool) []*pb.Entry {
 	}
 	ents := []*pb.Entry{}
 	for i := firstlogId; i < uint64(logidx); i++ {
-		ents = append(ents, rfLog.GetEnt(int64(i)))
+		ents = append(ents, rfLog.getEnt(int64(i)))
 	}
 	return ents
 }
@@ -220,25 +220,25 @@ func (rfLog *RaftLog) EraseAfter(logidx int64, withDel bool) []*pb.Entry {
 // GetRange
 // get range log from storage engine, and return the copy
 // [lo, hi)
-func (rfLog *RaftLog) GetRange(lo, hi int64) []*pb.Entry {
+func (rfLog *PersisRaftLog) GetRange(lo, hi int64) []*pb.Entry {
 	rfLog.mu.RLock()
 	defer rfLog.mu.RUnlock()
 	ents := []*pb.Entry{}
 	for i := lo; i <= hi; i++ {
-		ents = append(ents, rfLog.GetEnt(i))
+		ents = append(ents, rfLog.getEnt(i))
 	}
 	return ents
 }
 
 // GetEntry
 // get log entry with idx
-func (rfLog *RaftLog) GetEntry(idx int64) *pb.Entry {
+func (rfLog *PersisRaftLog) GetEntry(idx int64) *pb.Entry {
 	rfLog.mu.RLock()
 	defer rfLog.mu.RUnlock()
-	return rfLog.GetEnt(idx)
+	return rfLog.getEnt(idx)
 }
 
-func (rfLog *RaftLog) GetEnt(logidx int64) *pb.Entry {
+func (rfLog *PersisRaftLog) getEnt(logidx int64) *pb.Entry {
 	encodeValue, err := rfLog.dbEng.GetBytesValue(EncodeRaftLogKey(uint64(logidx)))
 	if err != nil {
 		logger.ELogger().Sugar().Debugf("get log entry with id %d error!", logidx)
